@@ -29,13 +29,15 @@ interface GameStore {
   state: GameState;
   selectedCrew: string | null;
   selectedTarget: string | null;
+  selectedTargetType: 'pipe' | 'door' | 'crew' | null;
   replayFrame: number | null;
   isPaused: boolean;
   initGame: (difficulty: 'easy' | 'normal' | 'hard') => void;
   selectCrew: (crewId: string | null) => void;
-  selectTarget: (targetId: string | null) => void;
+  selectTarget: (targetId: string | null, targetType: 'pipe' | 'door' | 'crew') => void;
   assignRepairTask: (crewId: string, pipeId: string) => void;
   assignSealDoorTask: (crewId: string, doorId: string) => void;
+  assignTreatTask: (doctorId: string, patientId: string) => void;
   toggleCircuitSwitch: (circuitId: string) => void;
   endTurn: () => void;
   setPaused: (paused: boolean) => void;
@@ -88,7 +90,7 @@ function processTaskProgress(
 } {
   const completedEvents: GameEvent[] = [];
   const updatedTasks: Task[] = [];
-  const updatedCrew = [...crew];
+  let updatedCrew = [...crew];
   let updatedPipes = [...pipes];
   let updatedDoors = [...doors];
 
@@ -130,6 +132,35 @@ function processTaskProgress(
             )
           );
         }
+      } else if (task.type === 'treat_crew') {
+        const patientIndex = updatedCrew.findIndex(c => c.id === task.targetId);
+        const doctorIndex = updatedCrew.findIndex(c => c.id === task.assignedCrewId);
+        if (patientIndex !== -1 && doctorIndex !== -1) {
+          const doctor = updatedCrew[doctorIndex];
+          const patient = updatedCrew[patientIndex];
+          const healAmount = Math.floor(20 + doctor.skills.medical * 0.5);
+          const injuryReduce = Math.floor(30 + doctor.skills.medical * 0.4);
+          const fatigueReduce = Math.floor(20 + doctor.skills.medical * 0.3);
+          const hypoxiaReduce = Math.floor(40 + doctor.skills.medical * 0.5);
+
+          updatedCrew[patientIndex] = {
+            ...patient,
+            health: Math.min(patient.maxHealth, patient.health + healAmount),
+            injury: Math.max(0, patient.injury - injuryReduce),
+            fatigue: Math.max(0, patient.fatigue - fatigueReduce),
+            hypoxia: Math.max(0, patient.hypoxia - hypoxiaReduce),
+          };
+
+          completedEvents.push(
+            createEvent(
+              'crew_treated',
+              turn,
+              `${doctor.name} 完成了对 ${patient.name} 的治疗，生命值恢复 ${healAmount}`,
+              'success',
+              patient.id
+            )
+          );
+        }
       }
 
       if (crewIndex !== -1) {
@@ -137,6 +168,7 @@ function processTaskProgress(
           ...updatedCrew[crewIndex],
           currentTask: null,
           status: 'idle',
+          fatigue: Math.min(100, updatedCrew[crewIndex].fatigue + 5),
         };
       }
     } else {
@@ -163,6 +195,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   state: createInitialState('normal'),
   selectedCrew: null,
   selectedTarget: null,
+  selectedTargetType: null,
   replayFrame: null,
   isPaused: false,
 
@@ -171,13 +204,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state: createInitialState(difficulty),
       selectedCrew: null,
       selectedTarget: null,
+      selectedTargetType: null,
       replayFrame: null,
       isPaused: false,
     });
   },
 
-  selectCrew: (crewId) => set({ selectedCrew: crewId }),
-  selectTarget: (targetId) => set({ selectedTarget: targetId }),
+  selectCrew: (crewId) => set({ selectedCrew: crewId, selectedTarget: null, selectedTargetType: null }),
+  selectTarget: (targetId, targetType) => set({ selectedTarget: targetId, selectedTargetType: targetType }),
 
   assignRepairTask: (crewId, pipeId) => {
     const { state } = get();
@@ -281,6 +315,58 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }));
   },
 
+  assignTreatTask: (doctorId, patientId) => {
+    const { state } = get();
+    if (state.status !== 'playing') return;
+
+    const doctor = state.crew.find(c => c.id === doctorId);
+    const patient = state.crew.find(c => c.id === patientId);
+
+    if (!doctor || !patient || doctor.status !== 'idle' || doctorId === patientId) return;
+    if (patient.health >= patient.maxHealth && patient.injury === 0 && patient.fatigue === 0 && patient.hypoxia === 0) return;
+
+    const duration = Math.max(1, Math.ceil(3 / (1 + doctor.skills.medical / 100)));
+
+    const task: Task = {
+      id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      type: 'treat_crew',
+      targetId: patientId,
+      assignedCrewId: doctorId,
+      progress: 0,
+      duration,
+      startTime: state.turn,
+    };
+
+    const action: Action = {
+      type: 'assign_task',
+      payload: { doctorId, patientId, taskType: 'treat_crew' },
+      timestamp: Date.now(),
+    };
+
+    const event = createEvent(
+      'crew_action',
+      state.turn,
+      `${doctor.name} 开始对 ${patient.name} 进行医疗救治`,
+      'info',
+      patientId
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        crew: prev.state.crew.map(c =>
+          c.id === doctorId ? { ...c, currentTask: task, status: 'working' } : c
+        ),
+        activeTasks: [...prev.state.activeTasks, task],
+        events: [...prev.state.events, event],
+        pendingActions: [...prev.state.pendingActions, action],
+      },
+      selectedCrew: null,
+      selectedTarget: null,
+      selectedTargetType: null,
+    }));
+  },
+
   toggleCircuitSwitch: (circuitId) => {
     const { state } = get();
     if (state.status !== 'playing') return;
@@ -336,21 +422,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state.turn
     );
 
-    const { event: randomEvent, pipeDamage } = generateRandomEvent(
+    const { event: randomEvent, pipeDamage, crewInjury } = generateRandomEvent(
       state.turn + 1,
       taskResult.updatedPipes,
       state.base.modules,
+      taskResult.updatedCrew,
       settings.eventFrequency
     );
 
     let newPipes = taskResult.updatedPipes;
     let newEvents = [...state.events, ...taskResult.completedEvents];
+    let updatedCrew = [...taskResult.updatedCrew];
 
     if (randomEvent && pipeDamage) {
       newEvents.push(randomEvent);
       newPipes = newPipes.map(p =>
         p.id === pipeDamage.pipeId ? damagePipe(p, pipeDamage.severity) : p
       );
+    }
+
+    if (crewInjury) {
+      const injuredCrewIndex = updatedCrew.findIndex(c => c.id === crewInjury.crewId);
+      if (injuredCrewIndex !== -1) {
+        const injured = updatedCrew[injuredCrewIndex];
+        updatedCrew[injuredCrewIndex] = {
+          ...injured,
+          injury: Math.min(100, injured.injury + crewInjury.severity),
+          health: Math.max(0, injured.health - Math.floor(crewInjury.severity * 0.5)),
+        };
+        newEvents.push(
+          createEvent(
+            'crew_injured',
+            state.turn + 1,
+            `${injured.name} 在事故中受伤！伤情 +${crewInjury.severity}`,
+            'danger',
+            injured.id
+          )
+        );
+      }
     }
 
     const oxygenMap = calculateOxygenConnectivity(
@@ -383,12 +492,82 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     });
 
+    updatedCrew = updatedCrew.map(member => {
+      const module = updatedModules.find(m => m.id === member.currentModule);
+      const hasOxygen = module?.hasOxygen ?? false;
+      const moduleOxygenLevel = module?.oxygenLevel ?? 100;
+
+      let newHypoxia = member.hypoxia;
+      let newInjury = member.injury;
+      let newFatigue = member.fatigue;
+      let newHealth = member.health;
+
+      if (!hasOxygen || moduleOxygenLevel < 30) {
+        const hypoxiaIncrease = hasOxygen ? 10 : 25;
+        newHypoxia = Math.min(100, newHypoxia + hypoxiaIncrease);
+
+        if (newHypoxia >= 50) {
+          const healthLoss = Math.floor(newHypoxia * 0.15);
+          newHealth = Math.max(0, newHealth - healthLoss);
+          if (newHypoxia >= 70) {
+            newEvents.push(
+              createEvent(
+                'crew_hypoxia',
+                state.turn + 1,
+                `${member.name} 严重缺氧！生命值 -${healthLoss}`,
+                'danger',
+                member.id
+              )
+            );
+          }
+        }
+      } else {
+        newHypoxia = Math.max(0, newHypoxia - 15);
+      }
+
+      if (member.status === 'working') {
+        newFatigue = Math.min(100, newFatigue + 8);
+      } else if (member.status === 'idle') {
+        newFatigue = Math.max(0, newFatigue - 5);
+      }
+
+      if (newFatigue >= 70) {
+        const fatigueDamage = Math.floor((newFatigue - 60) * 0.3);
+        newHealth = Math.max(0, newHealth - fatigueDamage);
+      }
+
+      if (newInjury > 0) {
+        const injuryDamage = Math.floor(newInjury * 0.08);
+        if (injuryDamage > 0) {
+          newHealth = Math.max(0, newHealth - injuryDamage);
+        }
+        newInjury = Math.min(100, newInjury + 2);
+      }
+
+      if (hasOxygen && moduleOxygenLevel >= 50 && member.status === 'idle' && newInjury === 0 && newHypoxia === 0) {
+        newHealth = Math.min(member.maxHealth, newHealth + 3);
+      }
+
+      return {
+        ...member,
+        health: newHealth,
+        injury: newInjury,
+        fatigue: newFatigue,
+        hypoxia: newHypoxia,
+      };
+    });
+
+    const allCrewDead = updatedCrew.every(c => c.health <= 0);
+
     const newOverallSafety = calculateOverallSafety(updatedModules);
 
     let newStatus: GameState['status'] = 'playing';
     let defeatReason: string | undefined;
 
-    if (newOverallSafety <= 0) {
+    if (allCrewDead) {
+      newStatus = 'defeat';
+      defeatReason = '所有队员均已失去生命体征，任务失败';
+    } else if (newOverallSafety <= 0) {
       newStatus = 'defeat';
       defeatReason = '整体安全值降至临界值以下，基地系统崩溃';
     } else if (state.timeRemaining <= 0) {
@@ -405,7 +584,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         doors: taskResult.updatedDoors,
         circuits: state.base.circuits,
       },
-      crew: taskResult.updatedCrew,
+      crew: updatedCrew,
       events: newEvents,
       activeTasks: taskResult.updatedTasks,
       status: newStatus,
@@ -425,6 +604,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state: newState,
       selectedCrew: null,
       selectedTarget: null,
+      selectedTargetType: null,
     });
   },
 

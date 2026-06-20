@@ -8,6 +8,7 @@ export function useGame() {
     state,
     selectedCrew,
     selectedTarget,
+    selectedTargetType,
     replayFrame,
     isPaused,
     initGame,
@@ -15,6 +16,7 @@ export function useGame() {
     selectTarget,
     assignRepairTask,
     assignSealDoorTask,
+    assignTreatTask,
     toggleCircuitSwitch,
     endTurn,
     setPaused,
@@ -24,12 +26,11 @@ export function useGame() {
 
   const handleCrewSelect = useCallback((crewId: string | null) => {
     selectCrew(crewId);
-    selectTarget(null);
-  }, [selectCrew, selectTarget]);
+  }, [selectCrew]);
 
-  const handleTargetSelect = useCallback((targetId: string | null, targetType: 'pipe' | 'door') => {
+  const handleTargetSelect = useCallback((targetId: string | null, targetType: 'pipe' | 'door' | 'crew') => {
     if (!selectedCrew) {
-      selectTarget(targetId);
+      selectTarget(targetId, targetType);
       return;
     }
 
@@ -37,8 +38,10 @@ export function useGame() {
       assignRepairTask(selectedCrew, targetId!);
     } else if (targetType === 'door') {
       assignSealDoorTask(selectedCrew, targetId!);
+    } else if (targetType === 'crew') {
+      assignTreatTask(selectedCrew, targetId!);
     }
-  }, [selectedCrew, assignRepairTask, assignSealDoorTask, selectTarget]);
+  }, [selectedCrew, assignRepairTask, assignSealDoorTask, assignTreatTask, selectTarget]);
 
   const loadSavedReplay = useCallback(() => {
     const data = loadReplayFromStorage();
@@ -75,6 +78,7 @@ export function useGame() {
     state,
     selectedCrew,
     selectedTarget,
+    selectedTargetType,
     replayFrame,
     isPaused,
     initGame,

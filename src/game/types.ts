@@ -6,11 +6,11 @@ export type PipeType = 'oxygen' | 'power';
 
 export type CrewStatus = 'idle' | 'moving' | 'working' | 'resting';
 
-export type TaskType = 'repair_pipe' | 'seal_door' | 'switch_circuit' | 'move';
+export type TaskType = 'repair_pipe' | 'seal_door' | 'switch_circuit' | 'move' | 'treat_crew';
 
 export type EventSeverity = 'info' | 'warning' | 'danger' | 'success';
 
-export type EventType = 'pipe_damage' | 'power_failure' | 'oxygen_leak' | 'fire' | 'system_repaired' | 'crew_action' | 'safety_drop' | 'door_sealed';
+export type EventType = 'pipe_damage' | 'power_failure' | 'oxygen_leak' | 'fire' | 'system_repaired' | 'crew_action' | 'safety_drop' | 'door_sealed' | 'crew_injured' | 'crew_treated' | 'crew_hypoxia';
 
 export type GameStatus = 'playing' | 'victory' | 'defeat';
 
@@ -67,6 +67,7 @@ export interface CrewSkills {
   repair: number;
   electrical: number;
   engineering: number;
+  medical: number;
 }
 
 export interface Crew {
@@ -75,6 +76,10 @@ export interface Crew {
   avatar: string;
   skills: CrewSkills;
   health: number;
+  maxHealth: number;
+  injury: number;
+  fatigue: number;
+  hypoxia: number;
   currentModule: string;
   currentTask: Task | null;
   status: CrewStatus;
