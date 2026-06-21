@@ -28,7 +28,7 @@ import {
   toggleCircuit,
 } from './power';
 import { createEvent, generateRandomEvent } from './events';
-import { createHistoryFrame, analyzeDefeat, saveReplay } from './replay';
+import { createHistoryFrame, analyzeDefeat, saveReplay, migrateGameState } from './replay';
 import {
   createInitialMeteorStormState,
   allocatePower as allocateShieldPower,
@@ -1150,12 +1150,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   loadReplay: (history) => {
     if (history.length === 0) return;
-    const firstFrame = history[0];
+
+    const migratedHistory = history.map(frame => {
+      const migratedFrame = { ...frame };
+      if (migratedFrame.stateSnapshot) {
+        migratedFrame.stateSnapshot = migrateGameState(migratedFrame.stateSnapshot) as Partial<GameState>;
+      }
+      if (migratedFrame.actions) {
+        let currentBatchId = '';
+        let actionIndex = 0;
+        migratedFrame.actions = migratedFrame.actions.map(action => {
+          if (!action.batchId) {
+            if (action.type === 'end_turn') {
+              currentBatchId = '';
+              return action;
+            }
+            if (!currentBatchId) {
+              currentBatchId = `batch_${action.timestamp || Date.now() + actionIndex}_${Math.random().toString(36).substr(2, 6)}`;
+            }
+            actionIndex++;
+            return { ...action, batchId: currentBatchId };
+          }
+          return action;
+        });
+      }
+      return migratedFrame;
+    });
+
+    const firstFrame = migratedHistory[0];
+    const migratedState = migrateGameState({
+      ...firstFrame.stateSnapshot,
+      history: migratedHistory,
+    });
+
     set({
-      state: {
-        ...firstFrame.stateSnapshot,
-        history,
-      } as GameState,
+      state: migratedState,
       replayFrame: 0,
     });
   },

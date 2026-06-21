@@ -1,4 +1,4 @@
-import type { GameState, HistoryFrame, Action, GameEvent, MistakeCategory, MistakeDetail, MistakeScoreResult, Pipe, Crew, Inventory, PipeStatus, MaterialType } from './types';
+import type { GameState, HistoryFrame, Action, GameEvent, MistakeCategory, MistakeDetail, MistakeScoreResult, Pipe, Crew, Inventory, PipeStatus, MaterialType, UndoInfo } from './types';
 
 export function createHistoryFrame(
   state: GameState,
@@ -25,7 +25,8 @@ export function loadReplay(): { history: HistoryFrame[]; finalState: GameState }
   const data = localStorage.getItem('spaceBase_replay');
   if (!data) return null;
   try {
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    return migrateReplayData(parsed);
   } catch {
     return null;
   }
@@ -243,4 +244,147 @@ export function calculateMistakeScore(history: HistoryFrame[], finalState: GameS
   const totalDeduction = categories.reduce((s, c) => s + c.totalDeduction, 0);
 
   return { categories, totalDeduction };
+}
+
+function generateBatchId(timestamp?: number): string {
+  const ts = timestamp ?? Date.now();
+  return `batch_${ts}_${Math.random().toString(36).substr(2, 6)}`;
+}
+
+function getActionDescription(action: Action): string {
+  const p = action.payload;
+  if (action.type === 'assign_task') {
+    if (p.taskType === 'repair_pipe') return '维修管线';
+    if (p.taskType === 'seal_door') return '密封舱门';
+    if (p.taskType === 'treat_crew') return '医疗救治';
+    if (p.taskType === 'restock_material') return '搬运物资';
+    if (p.taskType === 'rest') return '休息';
+    return '分配任务';
+  }
+  if (action.type === 'switch_circuit') return '切换电路';
+  if (action.type === 'restock_material') return '物资入库';
+  if (action.type === 'seal_door') return '密封舱门';
+  return '操作';
+}
+
+function rebuildUndoStack(actions: Action[]): UndoInfo[] {
+  const batchMap = new Map<string, Action[]>();
+  const batchOrder: string[] = [];
+
+  actions.forEach(action => {
+    const batchId = action.batchId!;
+    if (!batchMap.has(batchId)) {
+      batchMap.set(batchId, []);
+      batchOrder.push(batchId);
+    }
+    batchMap.get(batchId)!.push(action);
+  });
+
+  const undoStack: UndoInfo[] = [];
+  batchOrder.forEach(batchId => {
+    const batchActions = batchMap.get(batchId)!;
+    const descriptions = batchActions.map(a => getActionDescription(a));
+    const uniqueDescs = [...new Set(descriptions)];
+    undoStack.push({
+      batchId,
+      actionCount: batchActions.length,
+      description: `撤销批次：${uniqueDescs.join('、') || '多项操作'}（${batchActions.length}项）`,
+      createdAt: batchActions[0]?.timestamp ?? Date.now(),
+    });
+  });
+
+  return undoStack;
+}
+
+export function migrateGameState(state: Partial<GameState>): GameState {
+  const migrated = { ...state } as GameState;
+
+  if (!migrated.undoStack) {
+    migrated.undoStack = [];
+  }
+
+  if (!migrated.pendingActions) {
+    migrated.pendingActions = [];
+  }
+
+  migrated.pendingActions = migrated.pendingActions.map((action, idx) => {
+    if (!action.batchId) {
+      return {
+        ...action,
+        batchId: generateBatchId(action.timestamp || Date.now() + idx),
+      };
+    }
+    return action;
+  });
+
+  if (migrated.undoStack.length === 0 && migrated.pendingActions.length > 0) {
+    migrated.undoStack = rebuildUndoStack(migrated.pendingActions);
+  }
+
+  if (!migrated.history) {
+    migrated.history = [];
+  }
+
+  migrated.history = migrated.history.map(frame => {
+    const migratedFrame = { ...frame };
+    if (migratedFrame.stateSnapshot) {
+      migratedFrame.stateSnapshot = migrateGameState(migratedFrame.stateSnapshot) as Partial<GameState>;
+    }
+    if (migratedFrame.actions) {
+      let currentBatchId = '';
+      let actionIndex = 0;
+      migratedFrame.actions = migratedFrame.actions.map(action => {
+        if (!action.batchId) {
+          if (action.type === 'end_turn') {
+            currentBatchId = '';
+            return action;
+          }
+          if (!currentBatchId) {
+            currentBatchId = generateBatchId(action.timestamp || Date.now() + actionIndex);
+          }
+          actionIndex++;
+          return { ...action, batchId: currentBatchId };
+        }
+        return action;
+      });
+    }
+    return migratedFrame;
+  });
+
+  return migrated;
+}
+
+export function migrateReplayData(data: { history: HistoryFrame[]; finalState: GameState }): { history: HistoryFrame[]; finalState: GameState } {
+  const migratedHistory = data.history.map(frame => {
+    const migratedFrame = { ...frame };
+    if (migratedFrame.stateSnapshot) {
+      migratedFrame.stateSnapshot = migrateGameState(migratedFrame.stateSnapshot) as Partial<GameState>;
+    }
+    if (migratedFrame.actions) {
+      let currentBatchId = '';
+      let actionIndex = 0;
+      migratedFrame.actions = migratedFrame.actions.map(action => {
+        if (!action.batchId) {
+          if (action.type === 'end_turn') {
+            currentBatchId = '';
+            return action;
+          }
+          if (!currentBatchId) {
+            currentBatchId = generateBatchId(action.timestamp || Date.now() + actionIndex);
+          }
+          actionIndex++;
+          return { ...action, batchId: currentBatchId };
+        }
+        return action;
+      });
+    }
+    return migratedFrame;
+  });
+
+  const migratedFinalState = migrateGameState(data.finalState);
+
+  return {
+    history: migratedHistory,
+    finalState: migratedFinalState,
+  };
 }
