@@ -229,6 +229,17 @@ export interface MeteorStormState {
   stormWave: number;
 }
 
+export interface EnergyPreset {
+  id: string;
+  name: string;
+  shieldAllocations: Record<string, number>;
+  totalDamage: number;
+  damageReports: DamageReport[];
+  grade: string;
+  gradeDesc: string;
+  savedAt: number;
+}
+
 export interface MistakeDetail {
   turn: number;
   frameIndex: number;

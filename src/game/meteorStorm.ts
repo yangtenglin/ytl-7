@@ -1,5 +1,63 @@
-import type { ShieldNode, Meteor, DamageReport, Module, MeteorStormState } from './types';
+import type { ShieldNode, Meteor, DamageReport, Module, MeteorStormState, EnergyPreset } from './types';
 import { baseConfig } from './config';
+
+const PRESET_STORAGE_KEY = 'meteor_storm_energy_presets';
+const MAX_PRESETS = 3;
+
+export function loadPresets(): EnergyPreset[] {
+  try {
+    const raw = localStorage.getItem(PRESET_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.slice(0, MAX_PRESETS);
+  } catch {
+    return [];
+  }
+}
+
+export function savePresets(presets: EnergyPreset[]): void {
+  const trimmed = presets.slice(0, MAX_PRESETS);
+  localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(trimmed));
+}
+
+export function savePreset(
+  name: string,
+  shieldNodes: ShieldNode[],
+  damageReports: DamageReport[],
+  grade: string,
+  gradeDesc: string
+): EnergyPreset[] {
+  const presets = loadPresets();
+  const shieldAllocations: Record<string, number> = {};
+  shieldNodes.forEach(s => {
+    shieldAllocations[s.id] = s.powerAllocation;
+  });
+  const totalDamage = damageReports.reduce((sum, r) => sum + r.damage, 0);
+  const newPreset: EnergyPreset = {
+    id: `preset_${Date.now()}`,
+    name,
+    shieldAllocations,
+    totalDamage,
+    damageReports,
+    grade,
+    gradeDesc,
+    savedAt: Date.now(),
+  };
+  if (presets.length >= MAX_PRESETS) {
+    presets[MAX_PRESETS - 1] = newPreset;
+  } else {
+    presets.push(newPreset);
+  }
+  savePresets(presets);
+  return presets;
+}
+
+export function deletePreset(presetId: string): EnergyPreset[] {
+  const presets = loadPresets().filter(p => p.id !== presetId);
+  savePresets(presets);
+  return presets;
+}
 
 export function createInitialMeteorStormState(difficulty: 'easy' | 'normal' | 'hard'): MeteorStormState {
   const settings = getMeteorStormSettings(difficulty);
