@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useGameStore } from '../game/state';
-import type { HistoryFrame, MaterialType } from '../game/types';
+import type { HistoryFrame, MaterialType, MaterialAlertState } from '../game/types';
 import { loadReplay as loadReplayFromStorage } from '../game/replay';
 
 export function useGame() {
@@ -21,6 +21,7 @@ export function useGame() {
     toggleCircuitSwitch,
     restockMaterial,
     checkRepairMaterials,
+    getMaterialAlertStatus,
     moveTaskUp,
     moveTaskDown,
     endTurn,
@@ -70,6 +71,10 @@ export function useGame() {
   const handleCheckRepairMaterials = useCallback((pipeId: string) => {
     return checkRepairMaterials(pipeId);
   }, [checkRepairMaterials]);
+
+  const handleGetMaterialAlertStatus = useCallback((): MaterialAlertState => {
+    return getMaterialAlertStatus();
+  }, [getMaterialAlertStatus]);
 
   const handleAssignSupplyTask = useCallback((crewId: string, material: MaterialType, amount: number) => {
     const result = assignSupplyTask(crewId, material, amount);
@@ -133,6 +138,7 @@ export function useGame() {
     restockMaterial: handleRestockMaterial,
     assignSupplyTask: handleAssignSupplyTask,
     checkRepairMaterials: handleCheckRepairMaterials,
+    getMaterialAlertStatus: handleGetMaterialAlertStatus,
     moveTaskUp: handleMoveTaskUp,
     moveTaskDown: handleMoveTaskDown,
     endTurn,

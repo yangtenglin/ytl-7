@@ -51,7 +51,7 @@ function formatMaterialCost(pipe: Pipe): string {
 }
 
 export default function BaseSection() {
-  const { state, selectedCrew, selectedTarget, selectTarget, checkRepairMaterials } = useGame();
+  const { state, selectedCrew, selectedTarget, selectTarget, checkRepairMaterials, showNotification } = useGame();
   const { modules, pipes, doors } = state.base;
 
   const moduleCrewCount = useMemo(() => {
@@ -94,6 +94,11 @@ export default function BaseSection() {
 
   const handlePipeClick = (pipe: Pipe) => {
     if (pipe.status === 'normal') return;
+    const check = checkRepairMaterials(pipe.id);
+    if (!check.sufficient) {
+      showNotification(`材料不足，无法维修：${check.shortages.join('，')}`, 'error');
+      return;
+    }
     selectTarget(pipe.id, 'pipe');
   };
 
@@ -155,7 +160,8 @@ export default function BaseSection() {
           const matStatus = pipeMaterialStatus.get(pipe.id);
           const canRepair = pipe.status === 'normal' || matStatus?.sufficient;
           const color = getPipeColor(pipe, canRepair);
-          const isClickable = pipe.status !== 'normal';
+          const isClickable = pipe.status !== 'normal' && canRepair;
+          const isDisabled = pipe.status !== 'normal' && !canRepair;
 
           return (
             <g key={pipe.id}>
@@ -180,14 +186,14 @@ export default function BaseSection() {
                   />
                 )}
               </path>
-              {isClickable && (
+              {pipe.status !== 'normal' && (
                 <path
                   d={path}
                   fill="none"
                   stroke="transparent"
                   strokeWidth={12}
                   className={canRepair ? 'cursor-pointer' : 'cursor-not-allowed'}
-                  onClick={() => canRepair && handlePipeClick(pipe)}
+                  onClick={() => handlePipeClick(pipe)}
                 />
               )}
               {pipe.status !== 'normal' && (
@@ -403,7 +409,21 @@ export default function BaseSection() {
             textAnchor="middle"
             fontWeight="bold"
           >
-            点击损坏的管线或舱门分配任务（材料不足的管线已禁用）
+            点击损坏的管线或舱门分配任务（材料不足的管线已禁用🚫，点击会显示具体原因）
+          </text>
+        )}
+        {!selectedCrew && pipeMaterialStatus.size > 0 && (
+          <text
+            x={svgWidth / 2}
+            y={svgHeight - 15}
+            fill="#f59e0b"
+            fontSize="11"
+            textAnchor="middle"
+          >
+            ⚠️ 当前有 {pipeMaterialStatus.size} 条管线待修，
+            {Array.from(pipeMaterialStatus.entries()).filter(([, s]) => !s.sufficient).length > 0 &&
+              `其中 ${Array.from(pipeMaterialStatus.entries()).filter(([, s]) => !s.sufficient).length} 条材料不足无法维修`
+            }
           </text>
         )}
       </svg>

@@ -11,6 +11,7 @@ import type {
   Inventory,
   MaterialRequirement,
   MaterialType,
+  MaterialAlertState,
 } from './types';
 import { baseConfig, difficultySettings } from './config';
 import {
@@ -42,11 +43,37 @@ function hasSufficientMaterials(inventory: Inventory, requirement: MaterialRequi
   return true;
 }
 
-function consumeMaterials(inventory: Inventory, requirement: MaterialRequirement): Inventory {
-  return {
+function consumeMaterials(inventory: Inventory, requirement: MaterialRequirement): { newInventory: Inventory; depletedMaterials: MaterialType[] } {
+  const depletedMaterials: MaterialType[] = [];
+  const newInventory = {
     parts: inventory.parts - (requirement.parts ?? 0),
     oxygen_filter: inventory.oxygen_filter - (requirement.oxygen_filter ?? 0),
     battery: inventory.battery - (requirement.battery ?? 0),
+  };
+  if (inventory.parts > 0 && newInventory.parts <= 0) depletedMaterials.push('parts');
+  if (inventory.oxygen_filter > 0 && newInventory.oxygen_filter <= 0) depletedMaterials.push('oxygen_filter');
+  if (inventory.battery > 0 && newInventory.battery <= 0) depletedMaterials.push('battery');
+  return { newInventory, depletedMaterials };
+}
+
+function getMaterialAlertStatus(inventory: Inventory): MaterialAlertState {
+  const materials: MaterialType[] = ['parts', 'oxygen_filter', 'battery'];
+  const lowMaterials: MaterialType[] = [];
+  const result: Partial<MaterialAlertState> = {};
+
+  materials.forEach(material => {
+    const threshold = baseConfig.materials[material].alertThreshold;
+    const isLow = inventory[material] <= threshold;
+    (result as any)[material] = isLow;
+    if (isLow) lowMaterials.push(material);
+  });
+
+  return {
+    parts: result.parts!,
+    oxygen_filter: result.oxygen_filter!,
+    battery: result.battery!,
+    anyLow: lowMaterials.length > 0,
+    lowMaterials,
   };
 }
 
@@ -81,6 +108,7 @@ interface GameStore {
   toggleCircuitSwitch: (circuitId: string) => void;
   restockMaterial: (material: MaterialType, amount: number) => void;
   checkRepairMaterials: (pipeId: string) => { sufficient: boolean; requirement: MaterialRequirement; shortages: string[] };
+  getMaterialAlertStatus: () => MaterialAlertState;
   moveTaskUp: (taskId: string) => void;
   moveTaskDown: (taskId: string) => void;
   endTurn: () => void;
@@ -304,6 +332,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const requirement = baseConfig.repairMaterialCost[pipe.type][pipe.status];
     if (!hasSufficientMaterials(state.inventory, requirement)) {
       const shortages = getMaterialShortage(state.inventory, requirement);
+      const shortageEvent = createEvent(
+        'pipe_damage',
+        state.turn,
+        `⚠️ 无法维修${pipe.type === 'oxygen' ? '氧气' : '电力'}管线：${shortages.join('，')}`,
+        'danger',
+        pipeId,
+        { materialShortage: shortages }
+      );
+      set((prev) => ({
+        state: {
+          ...prev.state,
+          events: [...prev.state.events, shortageEvent],
+        },
+      }));
       return { success: false, message: `材料不足：${shortages.join('，')}` };
     }
 
@@ -344,15 +386,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
       { materialCost: requirement }
     );
 
+    const { newInventory, depletedMaterials } = consumeMaterials(state.inventory, requirement);
+    const newEvents = [...state.events, event];
+
+    depletedMaterials.forEach(material => {
+      const materialInfo = baseConfig.materials[material];
+      newEvents.push(
+        createEvent(
+          'pipe_damage',
+          state.turn,
+          `🚨 ${materialInfo.name}已耗尽！维修工作将无法继续进行，请尽快补给！`,
+          'danger',
+          undefined,
+          { depletedMaterial: material }
+        )
+      );
+    });
+
     set((prev) => ({
       state: {
         ...prev.state,
-        inventory: consumeMaterials(prev.state.inventory, requirement),
+        inventory: newInventory,
         crew: prev.state.crew.map(c =>
           c.id === crewId ? { ...c, currentTask: task, status: 'working' } : c
         ),
         activeTasks: [...prev.state.activeTasks, task],
-        events: [...prev.state.events, event],
+        events: newEvents,
         pendingActions: [...prev.state.pendingActions, action],
       },
       selectedCrew: null,
@@ -565,6 +624,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const sufficient = hasSufficientMaterials(state.inventory, requirement);
     const shortages = sufficient ? [] : getMaterialShortage(state.inventory, requirement);
     return { sufficient, requirement, shortages };
+  },
+
+  getMaterialAlertStatus: () => {
+    const { state } = get();
+    return getMaterialAlertStatus(state.inventory);
   },
 
   moveTaskUp: (taskId) => {

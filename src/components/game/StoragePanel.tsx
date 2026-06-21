@@ -75,8 +75,13 @@ export default function StoragePanel() {
   const damagedCount = state.base.pipes.filter(p => p.status !== 'normal').length;
 
   const isLow = (material: MaterialType): boolean => {
+    const threshold = baseConfig.materials[material].alertThreshold;
     const required = requiredForRepairs[material] || 0;
-    return inventory[material] < required || inventory[material] <= 2;
+    return inventory[material] < required || inventory[material] <= threshold;
+  };
+
+  const isDepleted = (material: MaterialType): boolean => {
+    return inventory[material] <= 0;
   };
 
   return (
@@ -128,13 +133,16 @@ export default function StoragePanel() {
           const config = baseConfig.materials[material];
           const amount = inventory[material];
           const low = isLow(material);
+          const depleted = isDepleted(material);
 
           return (
             <div
               key={material}
               className={`p-3 rounded-lg border transition-all ${
-                low
-                  ? `${materialBorderColors[material]} ${materialBgColors[material]} border-red-500/50`
+                depleted
+                  ? `border-red-500 bg-red-900/30 animate-pulse ring-2 ring-red-500/50`
+                  : low
+                  ? `${materialBorderColors[material]} ${materialBgColors[material]} border-red-500/50 animate-pulse`
                   : `border-slate-700 bg-slate-800/50 hover:border-slate-600`
               }`}
             >
@@ -142,22 +150,30 @@ export default function StoragePanel() {
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{config.icon}</span>
                   <div>
-                    <div className={`font-bold text-sm ${materialTextColors[material]}`}>
+                    <div className={`font-bold text-sm ${depleted ? 'text-red-400' : low ? 'text-red-400' : materialTextColors[material]}`}>
                       {config.name}
                     </div>
-                    <div className="text-xs text-slate-500">{config.description}</div>
+                    <div className="text-xs text-slate-500">
+                      {config.description}
+                      <span className="ml-1 text-slate-600">(告警阈值: ≤{config.alertThreshold})</span>
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className={`text-lg font-bold ${low ? 'text-red-400' : materialTextColors[material]}`}>
+                  <div className={`text-lg font-bold ${depleted ? 'text-red-500 animate-pulse' : low ? 'text-red-400' : materialTextColors[material]}`}>
                     {amount}
                   </div>
-                  {low && (
+                  {depleted ? (
+                    <div className="text-xs text-red-500 flex items-center gap-0.5 font-bold animate-pulse">
+                      <AlertTriangle className="w-2.5 h-2.5" />
+                      已耗尽！
+                    </div>
+                  ) : low ? (
                     <div className="text-xs text-red-400 flex items-center gap-0.5">
                       <AlertTriangle className="w-2.5 h-2.5" />
                       库存不足
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
 

@@ -1,11 +1,16 @@
 import { useCountdown } from '../../hooks/useCountdown';
 import { useGame } from '../../hooks/useGame';
-import { Shield, Clock, Wind, Zap, AlertTriangle } from 'lucide-react';
+import { baseConfig } from '../../game/config';
+import type { MaterialType } from '../../game/types';
+import { Shield, Clock, Wind, Zap, AlertTriangle, Package } from 'lucide-react';
 
 export default function StatusBar() {
   const { formattedTime, isUrgent, isCritical } = useCountdown();
-  const { state } = useGame();
-  const { overallSafety, base } = state;
+  const { state, getMaterialAlertStatus } = useGame();
+  const { overallSafety, base, inventory } = state;
+  const materialAlert = getMaterialAlertStatus();
+
+  const materials: MaterialType[] = ['parts', 'oxygen_filter', 'battery'];
 
   const getSafetyColor = (value: number) => {
     if (value < 30) return 'text-red-400';
@@ -17,6 +22,32 @@ export default function StatusBar() {
     if (value < 30) return 'bg-red-500';
     if (value < 60) return 'bg-yellow-500';
     return 'bg-green-500';
+  };
+
+  const getMaterialStatusColor = (material: MaterialType): string => {
+    const amount = inventory[material];
+    const threshold = baseConfig.materials[material].alertThreshold;
+    if (amount <= 0) return 'text-red-500';
+    if (amount <= threshold) return 'text-yellow-400';
+    const materialColors: Record<MaterialType, string> = {
+      parts: 'text-cyan-400',
+      oxygen_filter: 'text-blue-400',
+      battery: 'text-yellow-400',
+    };
+    return materialColors[material];
+  };
+
+  const getMaterialStatusBg = (material: MaterialType): string => {
+    const amount = inventory[material];
+    const threshold = baseConfig.materials[material].alertThreshold;
+    if (amount <= 0) return 'bg-red-500';
+    if (amount <= threshold) return 'bg-yellow-500';
+    const materialColors: Record<MaterialType, string> = {
+      parts: 'bg-cyan-500',
+      oxygen_filter: 'bg-blue-500',
+      battery: 'bg-yellow-500',
+    };
+    return materialColors[material];
   };
 
   const modulesWithOxygen = base.modules.filter(m => m.hasOxygen).length;
@@ -71,6 +102,29 @@ export default function StatusBar() {
               </span>
             </div>
           )}
+
+          {materialAlert.anyLow && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-yellow-900/30 border border-yellow-700/50 rounded-full animate-pulse">
+              <Package className="w-4 h-4 text-yellow-400" />
+              <span className="text-yellow-400 text-xs font-bold">物资告警：</span>
+              {materialAlert.lowMaterials.map((material, idx) => {
+                const config = baseConfig.materials[material];
+                const isDepleted = inventory[material] <= 0;
+                return (
+                  <span
+                    key={material}
+                    className={`flex items-center gap-1 text-xs font-bold ${
+                      isDepleted ? 'text-red-400' : 'text-yellow-400'
+                    }`}
+                  >
+                    <span>{config.icon}</span>
+                    <span>{config.name}{isDepleted ? '已耗尽' : '不足'}</span>
+                    {idx < materialAlert.lowMaterials.length - 1 && <span className="text-yellow-600 mx-0.5">|</span>}
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-6">
@@ -104,6 +158,38 @@ export default function StatusBar() {
                 style={{ width: `${(modulesWithPower / totalModules) * 100}%` }}
               ></div>
             </div>
+          </div>
+
+          <div className="h-8 w-px bg-slate-700"></div>
+
+          <div className="flex items-center gap-3">
+            {materials.map(material => {
+              const config = baseConfig.materials[material];
+              const amount = inventory[material];
+              const threshold = baseConfig.materials[material].alertThreshold;
+              const isLow = amount <= threshold;
+              const isDepleted = amount <= 0;
+              return (
+                <div key={material} className="flex items-center gap-1.5">
+                  <span className="text-sm">{config.icon}</span>
+                  <div className="flex flex-col items-end">
+                    <span className={`text-xs font-bold ${
+                      isDepleted ? 'text-red-500 animate-pulse' : isLow ? 'text-yellow-400 animate-pulse' : getMaterialStatusColor(material)
+                    }`}>
+                      {amount}
+                    </span>
+                    <div className="w-10 h-1 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${getMaterialStatusBg(material)} transition-all duration-300 ${
+                          isLow ? 'animate-pulse' : ''
+                        }`}
+                        style={{ width: `${Math.min(100, (amount / 20) * 100)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded border border-slate-700">

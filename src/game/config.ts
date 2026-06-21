@@ -6,18 +6,21 @@ const materials: Record<MaterialType, MaterialConfig> = {
     icon: '🔧',
     description: '通用机械零件，用于管线和设备维修',
     color: 'text-cyan-400',
+    alertThreshold: 3,
   },
   oxygen_filter: {
     name: '氧滤芯',
     icon: '🫁',
     description: '氧气过滤芯，维修氧气管线必需',
     color: 'text-blue-400',
+    alertThreshold: 2,
   },
   battery: {
     name: '电池',
     icon: '🔋',
     description: '备用电池组，维修电力管线必需',
     color: 'text-yellow-400',
+    alertThreshold: 2,
   },
 };
 

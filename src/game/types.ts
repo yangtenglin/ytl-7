@@ -40,6 +40,15 @@ export interface MaterialConfig {
   icon: string;
   description: string;
   color: string;
+  alertThreshold: number;
+}
+
+export interface MaterialAlertState {
+  parts: boolean;
+  oxygen_filter: boolean;
+  battery: boolean;
+  anyLow: boolean;
+  lowMaterials: MaterialType[];
 }
 
 export interface MaterialRestockEvent {
