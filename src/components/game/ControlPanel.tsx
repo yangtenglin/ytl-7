@@ -1,5 +1,5 @@
 import { useGame } from '../../hooks/useGame';
-import { Power, Zap, Lock, Play, Pause, SkipForward, ArrowUp, ArrowDown, Wrench, Package, Stethoscope } from 'lucide-react';
+import { Power, Zap, Lock, Play, Pause, SkipForward, ArrowUp, ArrowDown, Wrench, Package, Stethoscope, Undo2 } from 'lucide-react';
 import type { Task } from '../../game/types';
 
 function getTaskIcon(task: Task) {
@@ -159,7 +159,7 @@ function TaskPriorityQueue() {
 }
 
 export default function ControlPanel() {
-  const { state, isPaused, toggleCircuitSwitch, endTurn, setPaused } = useGame();
+  const { state, isPaused, toggleCircuitSwitch, endTurn, setPaused, undoLastBatch, getUndoStack } = useGame();
   const { circuits } = state.base;
 
   const groupedCircuits = circuits.reduce((acc, circuit) => {
@@ -174,12 +174,33 @@ export default function ControlPanel() {
   const sealedDoors = state.base.doors.filter(d => d.isSealed).length;
   const workingCrew = state.crew.filter(c => c.status === 'working').length;
   const idleCrew = state.crew.filter(c => c.status === 'idle').length;
+  const undoStack = getUndoStack();
+  const canUndo = undoStack.length > 0;
+  const lastUndoInfo = undoStack[undoStack.length - 1];
 
   return (
     <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-cyan-400 font-bold text-sm tracking-wider">控制面板</h3>
         <div className="flex gap-2">
+          <button
+            onClick={undoLastBatch}
+            disabled={!canUndo || state.status !== 'playing'}
+            className={`flex items-center gap-1 px-3 py-2 rounded border font-bold text-xs transition-all ${
+              !canUndo || state.status !== 'playing'
+                ? 'border-slate-700 text-slate-600 cursor-not-allowed'
+                : 'border-orange-500 bg-orange-900/30 text-orange-400 hover:bg-orange-800/50 hover:shadow-lg hover:shadow-orange-500/20'
+            }`}
+            title={canUndo ? lastUndoInfo?.description : '没有可撤销的操作'}
+          >
+            <Undo2 className="w-3.5 h-3.5" />
+            <span>撤销</span>
+            {canUndo && (
+              <span className="bg-orange-500/30 px-1.5 py-0.5 rounded-full text-[10px]">
+                {undoStack.length}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => setPaused(!isPaused)}
             disabled={state.status !== 'playing'}
@@ -206,6 +227,23 @@ export default function ControlPanel() {
           </button>
         </div>
       </div>
+
+      {canUndo && lastUndoInfo && (
+        <div className="mb-4 p-2 bg-orange-900/20 border border-orange-500/30 rounded-lg">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1 text-orange-400">
+              <Undo2 className="w-3 h-3" />
+              <span className="font-bold">可撤销操作：</span>
+            </div>
+            <button
+              onClick={undoLastBatch}
+              className="text-orange-300 hover:text-orange-100 underline underline-offset-2"
+            >
+              {lastUndoInfo.description}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-4 gap-2 mb-4">
         <div className="p-2 bg-slate-800/50 rounded border border-slate-700 text-center">

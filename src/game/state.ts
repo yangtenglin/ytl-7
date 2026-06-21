@@ -12,6 +12,7 @@ import type {
   MaterialRequirement,
   MaterialType,
   MaterialAlertState,
+  UndoInfo,
 } from './types';
 import { baseConfig, difficultySettings } from './config';
 import {
@@ -122,6 +123,11 @@ interface GameStore {
   triggerMeteorStorm: () => void;
   meteorStormTick: () => void;
   endMeteorStorm: () => void;
+  startUndoBatch: (description: string) => string;
+  commitUndoBatch: (batchId: string) => void;
+  cancelUndoBatch: (batchId: string) => void;
+  undoLastBatch: () => { success: boolean; message?: string };
+  getUndoStack: () => UndoInfo[];
 }
 
 function createInitialState(difficulty: 'easy' | 'normal' | 'hard'): GameState {
@@ -157,6 +163,7 @@ function createInitialState(difficulty: 'easy' | 'normal' | 'hard'): GameState {
     pendingActions: [],
     difficulty,
     meteorStorm: createInitialMeteorStormState(difficulty),
+    undoStack: [],
   };
 }
 
@@ -380,6 +387,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const skill = pipe.type === 'oxygen' ? crew.skills.engineering : crew.skills.electrical;
     const duration = calculateRepairDuration(pipe, skill, baseConfig.baseRepairSpeed, crew.fatigue);
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     const task: Task = {
       id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -392,10 +400,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
       materialCost: requirement,
     };
 
+    const originalInventory = { ...state.inventory };
+    const originalCrewStatus = crew.status;
+    const originalCrewCurrentTask = crew.currentTask;
+
     const action: Action = {
       type: 'assign_task',
-      payload: { crewId, pipeId, taskType: 'repair_pipe', materialCost: requirement },
+      payload: {
+        crewId,
+        pipeId,
+        taskType: 'repair_pipe',
+        materialCost: requirement,
+        taskId: task.id,
+        originalInventory,
+        originalCrewStatus,
+        originalCrewCurrentTask,
+      },
       timestamp: Date.now(),
+      batchId,
+      relatedTaskId: task.id,
     };
 
     const pipeType = pipe.type === 'oxygen' ? '氧气' : '电力';
@@ -442,6 +465,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         activeTasks: [...prev.state.activeTasks, task],
         events: newEvents,
         pendingActions: [...prev.state.pendingActions, action],
+        undoStack: [
+          ...prev.state.undoStack,
+          {
+            batchId,
+            actionCount: 1,
+            description: `撤销：${crew.name} 修复${pipeStatus}${pipeType}管线`,
+            createdAt: Date.now(),
+          },
+        ],
       },
       selectedCrew: null,
       selectedTarget: null,
@@ -460,6 +492,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!crew || !door || crew.status !== 'idle' || door.isSealed) return;
 
     const duration = Math.ceil(2 / (1 + crew.skills.engineering / 100));
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     const task: Task = {
       id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -471,10 +504,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
       startTime: state.turn,
     };
 
+    const originalCrewStatus = crew.status;
+    const originalCrewCurrentTask = crew.currentTask;
+
     const action: Action = {
       type: 'assign_task',
-      payload: { crewId, doorId, taskType: 'seal_door' },
+      payload: {
+        crewId,
+        doorId,
+        taskType: 'seal_door',
+        taskId: task.id,
+        originalCrewStatus,
+        originalCrewCurrentTask,
+      },
       timestamp: Date.now(),
+      batchId,
+      relatedTaskId: task.id,
     };
 
     const event = createEvent(
@@ -494,6 +539,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         activeTasks: [...prev.state.activeTasks, task],
         events: [...prev.state.events, event],
         pendingActions: [...prev.state.pendingActions, action],
+        undoStack: [
+          ...prev.state.undoStack,
+          {
+            batchId,
+            actionCount: 1,
+            description: `撤销：${crew.name} 密封舱门`,
+            createdAt: Date.now(),
+          },
+        ],
       },
       selectedCrew: null,
       selectedTarget: null,
@@ -511,6 +565,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (patient.health >= patient.maxHealth && patient.injury === 0 && patient.fatigue === 0 && patient.hypoxia === 0) return;
 
     const duration = Math.max(1, Math.ceil(3 / (1 + doctor.skills.medical / 100)));
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     const task: Task = {
       id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -522,10 +577,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
       startTime: state.turn,
     };
 
+    const originalDoctorStatus = doctor.status;
+    const originalDoctorCurrentTask = doctor.currentTask;
+
     const action: Action = {
       type: 'assign_task',
-      payload: { doctorId, patientId, taskType: 'treat_crew' },
+      payload: {
+        doctorId,
+        patientId,
+        taskType: 'treat_crew',
+        taskId: task.id,
+        originalDoctorStatus,
+        originalDoctorCurrentTask,
+      },
       timestamp: Date.now(),
+      batchId,
+      relatedTaskId: task.id,
     };
 
     const event = createEvent(
@@ -545,6 +612,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         activeTasks: [...prev.state.activeTasks, task],
         events: [...prev.state.events, event],
         pendingActions: [...prev.state.pendingActions, action],
+        undoStack: [
+          ...prev.state.undoStack,
+          {
+            batchId,
+            actionCount: 1,
+            description: `撤销：${doctor.name} 治疗 ${patient.name}`,
+            createdAt: Date.now(),
+          },
+        ],
       },
       selectedCrew: null,
       selectedTarget: null,
@@ -563,6 +639,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const materialInfo = baseConfig.materials[material];
     const duration = Math.max(1, Math.ceil(amount / (1 + crew.skills.repair / 100)));
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     const task: Task = {
       id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -576,10 +653,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
       restockAmount: amount,
     };
 
+    const originalCrewStatus = crew.status;
+    const originalCrewCurrentTask = crew.currentTask;
+
     const action: Action = {
       type: 'assign_task',
-      payload: { crewId, material, amount, taskType: 'restock_material' },
+      payload: {
+        crewId,
+        material,
+        amount,
+        taskType: 'restock_material',
+        taskId: task.id,
+        originalCrewStatus,
+        originalCrewCurrentTask,
+      },
       timestamp: Date.now(),
+      batchId,
+      relatedTaskId: task.id,
     };
 
     const event = createEvent(
@@ -600,6 +690,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         activeTasks: [...prev.state.activeTasks, task],
         events: [...prev.state.events, event],
         pendingActions: [...prev.state.pendingActions, action],
+        undoStack: [
+          ...prev.state.undoStack,
+          {
+            batchId,
+            actionCount: 1,
+            description: `撤销：${crew.name} 搬运${materialInfo.name}`,
+            createdAt: Date.now(),
+          },
+        ],
       },
       selectedCrew: null,
       selectedTarget: null,
@@ -617,6 +716,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!crew || crew.status !== 'idle') return;
 
     const duration = 2;
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     const task: Task = {
       id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -628,10 +728,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       startTime: state.turn,
     };
 
+    const originalCrewStatus = crew.status;
+    const originalCrewCurrentTask = crew.currentTask;
+
     const action: Action = {
       type: 'assign_task',
-      payload: { crewId, taskType: 'rest' },
+      payload: {
+        crewId,
+        taskType: 'rest',
+        taskId: task.id,
+        originalCrewStatus,
+        originalCrewCurrentTask,
+      },
       timestamp: Date.now(),
+      batchId,
+      relatedTaskId: task.id,
     };
 
     const event = createEvent(
@@ -651,6 +762,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         activeTasks: [...prev.state.activeTasks, task],
         events: [...prev.state.events, event],
         pendingActions: [...prev.state.pendingActions, action],
+        undoStack: [
+          ...prev.state.undoStack,
+          {
+            batchId,
+            actionCount: 1,
+            description: `撤销：${crew.name} 休息`,
+            createdAt: Date.now(),
+          },
+        ],
       },
       selectedCrew: null,
       selectedTarget: null,
@@ -665,10 +785,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const result = toggleCircuit(state.base.circuits, circuitId);
     if (!result.success) return;
 
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const circuit = state.base.circuits.find(c => c.id === circuitId);
+    const originalIsOn = circuit?.isOn ?? false;
+
     const action: Action = {
       type: 'switch_circuit',
-      payload: { circuitId },
+      payload: {
+        circuitId,
+        originalIsOn,
+      },
       timestamp: Date.now(),
+      batchId,
     };
 
     const event = createEvent(
@@ -688,6 +816,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         },
         events: [...prev.state.events, event],
         pendingActions: [...prev.state.pendingActions, action],
+        undoStack: [
+          ...prev.state.undoStack,
+          {
+            batchId,
+            actionCount: 1,
+            description: `撤销：切换电路 ${circuit?.name || circuitId}`,
+            createdAt: Date.now(),
+          },
+        ],
       },
     }));
   },
@@ -751,11 +888,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (amount <= 0) return;
 
     const materialInfo = baseConfig.materials[material];
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const originalInventory = { ...state.inventory };
 
     const action: Action = {
       type: 'restock_material',
-      payload: { material, amount },
+      payload: {
+        material,
+        amount,
+        originalInventory,
+      },
       timestamp: Date.now(),
+      batchId,
     };
 
     const event = createEvent(
@@ -776,6 +920,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         },
         events: [...prev.state.events, event],
         pendingActions: [...prev.state.pendingActions, action],
+        undoStack: [
+          ...prev.state.undoStack,
+          {
+            batchId,
+            actionCount: 1,
+            description: `撤销：入库${materialInfo.name} ×${amount}`,
+            createdAt: Date.now(),
+          },
+        ],
       },
     }));
   },
@@ -974,6 +1127,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       defeatReason,
       history: [...state.history, historyFrame],
       pendingActions: [],
+      undoStack: [],
     };
 
     if (newStatus === 'defeat') {
@@ -1163,5 +1317,168 @@ export const useGameStore = create<GameStore>((set, get) => ({
         events: [...prev.state.events, event],
       },
     }));
+  },
+
+  startUndoBatch: (description) => {
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    return batchId;
+  },
+
+  commitUndoBatch: (batchId) => {
+    const { state } = get();
+    const batchActions = state.pendingActions.filter(a => a.batchId === batchId);
+    if (batchActions.length === 0) return;
+
+    const descriptions: string[] = [];
+    batchActions.forEach(a => {
+      const p = a.payload;
+      if (p.taskType === 'repair_pipe') descriptions.push('维修管线');
+      else if (p.taskType === 'seal_door') descriptions.push('密封舱门');
+      else if (p.taskType === 'treat_crew') descriptions.push('医疗救治');
+      else if (p.taskType === 'restock_material') descriptions.push('搬运物资');
+      else if (p.taskType === 'rest') descriptions.push('休息');
+    });
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        undoStack: [
+          ...prev.state.undoStack,
+          {
+            batchId,
+            actionCount: batchActions.length,
+            description: `撤销批次：${descriptions.join('、') || '多项操作'}（${batchActions.length}项）`,
+            createdAt: Date.now(),
+          },
+        ],
+      },
+    }));
+  },
+
+  cancelUndoBatch: (batchId) => {
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        pendingActions: prev.state.pendingActions.filter(a => a.batchId !== batchId),
+      },
+    }));
+  },
+
+  undoLastBatch: () => {
+    const { state } = get();
+    if (state.status !== 'playing') return { success: false, message: '游戏未在进行中' };
+    if (state.undoStack.length === 0) return { success: false, message: '没有可撤销的操作' };
+
+    const lastUndoInfo = state.undoStack[state.undoStack.length - 1];
+    const batchId = lastUndoInfo.batchId;
+    const batchActions = state.pendingActions.filter(a => a.batchId === batchId);
+
+    if (batchActions.length === 0) {
+      set((prev) => ({
+        state: {
+          ...prev.state,
+          undoStack: prev.state.undoStack.slice(0, -1),
+        },
+      }));
+      return { success: false, message: '该批次操作已失效' };
+    }
+
+    const sortedActions = [...batchActions].sort((a, b) => b.timestamp - a.timestamp);
+
+    let newActiveTasks = [...state.activeTasks];
+    let newCrew = state.crew.map(c => ({ ...c }));
+    let newInventory = { ...state.inventory };
+    let newCircuits = state.base.circuits.map(c => ({ ...c }));
+
+    sortedActions.forEach(action => {
+      const payload = action.payload;
+
+      if (action.type === 'assign_task') {
+        const taskId = payload.taskId as string;
+        const crewId = (payload.crewId || payload.doctorId) as string;
+        const originalCrewStatus = payload.originalCrewStatus as Crew['status'];
+        const originalCrewCurrentTask = payload.originalCrewCurrentTask as Task | null;
+
+        newActiveTasks = newActiveTasks.filter(t => t.id !== taskId);
+
+        const crewIdx = newCrew.findIndex(c => c.id === crewId);
+        if (crewIdx !== -1) {
+          newCrew[crewIdx] = {
+            ...newCrew[crewIdx],
+            status: originalCrewStatus || 'idle',
+            currentTask: originalCrewCurrentTask || null,
+          };
+        }
+
+        if (payload.taskType === 'repair_pipe' && payload.originalInventory) {
+          newInventory = { ...(payload.originalInventory as Inventory) };
+        }
+      } else if (action.type === 'switch_circuit') {
+        const circuitId = payload.circuitId as string;
+        const originalIsOn = payload.originalIsOn as boolean;
+        const circuitIdx = newCircuits.findIndex(c => c.id === circuitId);
+        if (circuitIdx !== -1) {
+          newCircuits[circuitIdx] = {
+            ...newCircuits[circuitIdx],
+            isOn: originalIsOn,
+          };
+        }
+      } else if (action.type === 'restock_material') {
+        if (payload.originalInventory) {
+          newInventory = { ...(payload.originalInventory as Inventory) };
+        }
+      }
+    });
+
+    const taskIdsInBatch = new Set(
+      batchActions.filter(a => a.relatedTaskId).map(a => a.relatedTaskId)
+    );
+
+    const cutoffTimestamp = Math.min(...batchActions.map(a => a.timestamp));
+    const newEvents = state.events.filter(e => e.timestamp < cutoffTimestamp - 1000 ||
+      !Array.from(taskIdsInBatch).some(tid =>
+        (state.activeTasks.find(t => t.id === tid)?.targetId === e.targetId) ||
+        (batchActions.some(ba => ba.payload.targetId === e.targetId))
+      )
+    );
+
+    const undoAction: Action = {
+      type: 'undo_batch',
+      payload: { batchId, restoredCount: batchActions.length },
+      timestamp: Date.now(),
+      batchId,
+    };
+
+    const undoEvent = createEvent(
+      'crew_action',
+      state.turn,
+      `↩️ 已撤销操作：${lastUndoInfo.description}`,
+      'info'
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        base: {
+          ...prev.state.base,
+          circuits: newCircuits,
+        },
+        inventory: newInventory,
+        crew: newCrew,
+        activeTasks: newActiveTasks,
+        events: [...newEvents, undoEvent],
+        pendingActions: [
+          ...prev.state.pendingActions.filter(a => a.batchId !== batchId),
+          undoAction,
+        ],
+        undoStack: prev.state.undoStack.slice(0, -1),
+      },
+    }));
+
+    return { success: true, message: `已撤销 ${batchActions.length} 项操作` };
+  },
+
+  getUndoStack: () => {
+    return get().state.undoStack;
   },
 }));

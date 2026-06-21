@@ -16,7 +16,7 @@ export type EventType = 'pipe_damage' | 'power_failure' | 'oxygen_leak' | 'fire'
 
 export type GameStatus = 'playing' | 'victory' | 'defeat';
 
-export type ActionType = 'assign_task' | 'seal_door' | 'switch_circuit' | 'end_turn' | 'restock_material';
+export type ActionType = 'assign_task' | 'seal_door' | 'switch_circuit' | 'end_turn' | 'restock_material' | 'undo_batch';
 
 export interface Position {
   x: number;
@@ -148,6 +148,8 @@ export interface Action {
   type: ActionType;
   payload: Record<string, unknown>;
   timestamp: number;
+  batchId?: string;
+  relatedTaskId?: string;
 }
 
 export interface HistoryFrame {
@@ -178,6 +180,7 @@ export interface GameState {
   pendingActions: Action[];
   difficulty: 'easy' | 'normal' | 'hard';
   meteorStorm: MeteorStormState;
+  undoStack: UndoInfo[];
 }
 
 export interface ShieldNode {
@@ -257,6 +260,13 @@ export interface MistakeCategory {
 export interface MistakeScoreResult {
   categories: MistakeCategory[];
   totalDeduction: number;
+}
+
+export interface UndoInfo {
+  batchId: string;
+  actionCount: number;
+  description: string;
+  createdAt: number;
 }
 
 export interface GameConfig {

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useGameStore } from '../game/state';
-import type { HistoryFrame, MaterialType, MaterialAlertState } from '../game/types';
+import type { HistoryFrame, MaterialType, MaterialAlertState, UndoInfo } from '../game/types';
 import { loadReplay as loadReplayFromStorage } from '../game/replay';
 
 export function useGame() {
@@ -34,6 +34,11 @@ export function useGame() {
     triggerMeteorStorm,
     meteorStormTick,
     endMeteorStorm,
+    startUndoBatch,
+    commitUndoBatch,
+    cancelUndoBatch,
+    undoLastBatch,
+    getUndoStack,
   } = useGameStore();
 
   const [notification, setNotification] = useState<{ message: string; type: 'error' | 'info' | 'success' } | null>(null);
@@ -127,6 +132,30 @@ export function useGame() {
     return state.history;
   }, [state.history]);
 
+  const handleStartUndoBatch = useCallback((description: string): string => {
+    return startUndoBatch(description);
+  }, [startUndoBatch]);
+
+  const handleCommitUndoBatch = useCallback((batchId: string) => {
+    commitUndoBatch(batchId);
+  }, [commitUndoBatch]);
+
+  const handleCancelUndoBatch = useCallback((batchId: string) => {
+    cancelUndoBatch(batchId);
+  }, [cancelUndoBatch]);
+
+  const handleUndoLastBatch = useCallback((): { success: boolean; message?: string } => {
+    const result = undoLastBatch();
+    if (result.message) {
+      showNotification(result.message, result.success ? 'success' : 'error');
+    }
+    return result;
+  }, [undoLastBatch, showNotification]);
+
+  const handleGetUndoStack = useCallback((): UndoInfo[] => {
+    return getUndoStack();
+  }, [getUndoStack]);
+
   return {
     state,
     selectedCrew,
@@ -159,5 +188,10 @@ export function useGame() {
     triggerMeteorStorm,
     meteorStormTick,
     endMeteorStorm,
+    startUndoBatch: handleStartUndoBatch,
+    commitUndoBatch: handleCommitUndoBatch,
+    cancelUndoBatch: handleCancelUndoBatch,
+    undoLastBatch: handleUndoLastBatch,
+    getUndoStack: handleGetUndoStack,
   };
 }
