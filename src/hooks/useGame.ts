@@ -1,6 +1,6 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useGameStore } from '../game/state';
-import type { HistoryFrame } from '../game/types';
+import type { HistoryFrame, MaterialType } from '../game/types';
 import { loadReplay as loadReplayFromStorage } from '../game/replay';
 
 export function useGame() {
@@ -18,11 +18,20 @@ export function useGame() {
     assignSealDoorTask,
     assignTreatTask,
     toggleCircuitSwitch,
+    restockMaterial,
+    checkRepairMaterials,
     endTurn,
     setPaused,
     setReplayFrame,
     loadReplay,
   } = useGameStore();
+
+  const [notification, setNotification] = useState<{ message: string; type: 'error' | 'info' | 'success' } | null>(null);
+
+  const showNotification = useCallback((message: string, type: 'error' | 'info' | 'success' = 'info') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  }, []);
 
   const handleCrewSelect = useCallback((crewId: string | null) => {
     selectCrew(crewId);
@@ -35,13 +44,24 @@ export function useGame() {
     }
 
     if (targetType === 'pipe') {
-      assignRepairTask(selectedCrew, targetId!);
+      const result = assignRepairTask(selectedCrew, targetId!);
+      if (!result.success && result.message) {
+        showNotification(result.message, 'error');
+      }
     } else if (targetType === 'door') {
       assignSealDoorTask(selectedCrew, targetId!);
     } else if (targetType === 'crew') {
       assignTreatTask(selectedCrew, targetId!);
     }
-  }, [selectedCrew, assignRepairTask, assignSealDoorTask, assignTreatTask, selectTarget]);
+  }, [selectedCrew, assignRepairTask, assignSealDoorTask, assignTreatTask, selectTarget, showNotification]);
+
+  const handleRestockMaterial = useCallback((material: MaterialType, amount: number) => {
+    restockMaterial(material, amount);
+  }, [restockMaterial]);
+
+  const handleCheckRepairMaterials = useCallback((pipeId: string) => {
+    return checkRepairMaterials(pipeId);
+  }, [checkRepairMaterials]);
 
   const loadSavedReplay = useCallback(() => {
     const data = loadReplayFromStorage();
@@ -81,10 +101,14 @@ export function useGame() {
     selectedTargetType,
     replayFrame,
     isPaused,
+    notification,
+    showNotification,
     initGame,
     selectCrew: handleCrewSelect,
     selectTarget: handleTargetSelect,
     toggleCircuitSwitch,
+    restockMaterial: handleRestockMaterial,
+    checkRepairMaterials: handleCheckRepairMaterials,
     endTurn,
     setPaused,
     setReplayFrame,

@@ -8,6 +8,9 @@ import type {
   Pipe,
   Door,
   HistoryFrame,
+  Inventory,
+  MaterialRequirement,
+  MaterialType,
 } from './types';
 import { baseConfig, difficultySettings } from './config';
 import {
@@ -25,6 +28,35 @@ import {
 import { createEvent, generateRandomEvent } from './events';
 import { createHistoryFrame, analyzeDefeat, saveReplay } from './replay';
 
+function hasSufficientMaterials(inventory: Inventory, requirement: MaterialRequirement): boolean {
+  if (requirement.parts && inventory.parts < requirement.parts) return false;
+  if (requirement.oxygen_filter && inventory.oxygen_filter < requirement.oxygen_filter) return false;
+  if (requirement.battery && inventory.battery < requirement.battery) return false;
+  return true;
+}
+
+function consumeMaterials(inventory: Inventory, requirement: MaterialRequirement): Inventory {
+  return {
+    parts: inventory.parts - (requirement.parts ?? 0),
+    oxygen_filter: inventory.oxygen_filter - (requirement.oxygen_filter ?? 0),
+    battery: inventory.battery - (requirement.battery ?? 0),
+  };
+}
+
+function getMaterialShortage(inventory: Inventory, requirement: MaterialRequirement): string[] {
+  const shortages: string[] = [];
+  if (requirement.parts && inventory.parts < requirement.parts) {
+    shortages.push(`零件不足(需要${requirement.parts}，现有${inventory.parts})`);
+  }
+  if (requirement.oxygen_filter && inventory.oxygen_filter < requirement.oxygen_filter) {
+    shortages.push(`氧滤芯不足(需要${requirement.oxygen_filter}，现有${inventory.oxygen_filter})`);
+  }
+  if (requirement.battery && inventory.battery < requirement.battery) {
+    shortages.push(`电池不足(需要${requirement.battery}，现有${inventory.battery})`);
+  }
+  return shortages;
+}
+
 interface GameStore {
   state: GameState;
   selectedCrew: string | null;
@@ -35,10 +67,12 @@ interface GameStore {
   initGame: (difficulty: 'easy' | 'normal' | 'hard') => void;
   selectCrew: (crewId: string | null) => void;
   selectTarget: (targetId: string | null, targetType: 'pipe' | 'door' | 'crew') => void;
-  assignRepairTask: (crewId: string, pipeId: string) => void;
+  assignRepairTask: (crewId: string, pipeId: string) => { success: boolean; message?: string };
   assignSealDoorTask: (crewId: string, doorId: string) => void;
   assignTreatTask: (doctorId: string, patientId: string) => void;
   toggleCircuitSwitch: (circuitId: string) => void;
+  restockMaterial: (material: MaterialType, amount: number) => void;
+  checkRepairMaterials: (pipeId: string) => { sufficient: boolean; requirement: MaterialRequirement; shortages: string[] };
   endTurn: () => void;
   setPaused: (paused: boolean) => void;
   setReplayFrame: (frame: number | null) => void;
@@ -48,6 +82,7 @@ interface GameStore {
 
 function createInitialState(difficulty: 'easy' | 'normal' | 'hard'): GameState {
   const settings = difficultySettings[difficulty];
+  const inventoryMultiplier = difficulty === 'easy' ? 1.5 : difficulty === 'hard' ? 0.7 : 1;
   return {
     turn: 1,
     timeRemaining: settings.totalTime,
@@ -57,6 +92,11 @@ function createInitialState(difficulty: 'easy' | 'normal' | 'hard'): GameState {
       pipes: JSON.parse(JSON.stringify(baseConfig.pipes)),
       doors: JSON.parse(JSON.stringify(baseConfig.doors)),
       circuits: JSON.parse(JSON.stringify(baseConfig.circuits)),
+    },
+    inventory: {
+      parts: Math.ceil(baseConfig.initialInventory.parts * inventoryMultiplier),
+      oxygen_filter: Math.ceil(baseConfig.initialInventory.oxygen_filter * inventoryMultiplier),
+      battery: Math.ceil(baseConfig.initialInventory.battery * inventoryMultiplier),
     },
     crew: JSON.parse(JSON.stringify(baseConfig.crew)),
     events: [
@@ -215,12 +255,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   assignRepairTask: (crewId, pipeId) => {
     const { state } = get();
-    if (state.status !== 'playing') return;
+    if (state.status !== 'playing') return { success: false, message: '游戏未在进行中' };
 
     const crew = state.crew.find(c => c.id === crewId);
     const pipe = state.base.pipes.find(p => p.id === pipeId);
 
-    if (!crew || !pipe || crew.status !== 'idle' || pipe.status === 'normal') return;
+    if (!crew || !pipe) return { success: false, message: '队员或管线不存在' };
+    if (crew.status !== 'idle') return { success: false, message: '队员当前不可用' };
+    if (pipe.status === 'normal') return { success: false, message: '该管线无需维修' };
+
+    const requirement = baseConfig.repairMaterialCost[pipe.type][pipe.status];
+    if (!hasSufficientMaterials(state.inventory, requirement)) {
+      const shortages = getMaterialShortage(state.inventory, requirement);
+      return { success: false, message: `材料不足：${shortages.join('，')}` };
+    }
 
     const skill = pipe.type === 'oxygen' ? crew.skills.engineering : crew.skills.electrical;
     const duration = calculateRepairDuration(pipe, skill, baseConfig.baseRepairSpeed);
@@ -233,26 +281,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
       progress: 0,
       duration,
       startTime: state.turn,
+      materialCost: requirement,
     };
 
     const action: Action = {
       type: 'assign_task',
-      payload: { crewId, pipeId, taskType: 'repair_pipe' },
+      payload: { crewId, pipeId, taskType: 'repair_pipe', materialCost: requirement },
       timestamp: Date.now(),
     };
 
     const pipeType = pipe.type === 'oxygen' ? '氧气' : '电力';
+    const pipeStatus = pipe.status === 'damaged' ? '损坏' : '断裂';
+    const costDesc = Object.entries(requirement)
+      .map(([k, v]) => {
+        const names: Record<string, string> = { parts: '零件', oxygen_filter: '氧滤芯', battery: '电池' };
+        return `${names[k]}×${v}`;
+      })
+      .join('、');
     const event = createEvent(
       'crew_action',
       state.turn,
-      `${crew.name} 开始修复${pipeType}管线`,
+      `${crew.name} 开始修复${pipeStatus}${pipeType}管线，消耗材料：${costDesc}`,
       'info',
-      pipeId
+      pipeId,
+      { materialCost: requirement }
     );
 
     set((prev) => ({
       state: {
         ...prev.state,
+        inventory: consumeMaterials(prev.state.inventory, requirement),
         crew: prev.state.crew.map(c =>
           c.id === crewId ? { ...c, currentTask: task, status: 'working' } : c
         ),
@@ -263,6 +321,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       selectedCrew: null,
       selectedTarget: null,
     }));
+
+    return { success: true };
   },
 
   assignSealDoorTask: (crewId, doorId) => {
@@ -394,6 +454,53 @@ export const useGameStore = create<GameStore>((set, get) => ({
         base: {
           ...prev.state.base,
           circuits: result.circuits,
+        },
+        events: [...prev.state.events, event],
+        pendingActions: [...prev.state.pendingActions, action],
+      },
+    }));
+  },
+
+  checkRepairMaterials: (pipeId) => {
+    const { state } = get();
+    const pipe = state.base.pipes.find(p => p.id === pipeId);
+    if (!pipe) {
+      return { sufficient: false, requirement: {}, shortages: ['管线不存在'] };
+    }
+    const requirement = baseConfig.repairMaterialCost[pipe.type][pipe.status];
+    const sufficient = hasSufficientMaterials(state.inventory, requirement);
+    const shortages = sufficient ? [] : getMaterialShortage(state.inventory, requirement);
+    return { sufficient, requirement, shortages };
+  },
+
+  restockMaterial: (material, amount) => {
+    const { state } = get();
+    if (state.status !== 'playing') return;
+    if (amount <= 0) return;
+
+    const materialInfo = baseConfig.materials[material];
+
+    const action: Action = {
+      type: 'restock_material',
+      payload: { material, amount },
+      timestamp: Date.now(),
+    };
+
+    const event = createEvent(
+      'crew_action',
+      state.turn,
+      `仓储室入库：${materialInfo.name} ×${amount}`,
+      'success',
+      undefined,
+      { material, amount }
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        inventory: {
+          ...prev.state.inventory,
+          [material]: prev.state.inventory[material] + amount,
         },
         events: [...prev.state.events, event],
         pendingActions: [...prev.state.pendingActions, action],

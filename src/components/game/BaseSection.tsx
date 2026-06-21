@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useGame } from '../../hooks/useGame';
+import { baseConfig } from '../../game/config';
 import type { Module, Pipe, Door } from '../../game/types';
 
 const moduleColors: Record<string, string> = {
@@ -28,9 +29,9 @@ function getModuleStatusColor(module: Module): string {
   return '#10b981';
 }
 
-function getPipeColor(pipe: Pipe): string {
-  if (pipe.status === 'broken') return '#ef4444';
-  if (pipe.status === 'damaged') return '#f59e0b';
+function getPipeColor(pipe: Pipe, canRepair: boolean): string {
+  if (pipe.status === 'broken') return canRepair ? '#ef4444' : '#7f1d1d';
+  if (pipe.status === 'damaged') return canRepair ? '#f59e0b' : '#92400e';
   return pipe.type === 'oxygen' ? '#06b6d4' : '#22c55e';
 }
 
@@ -40,8 +41,17 @@ function getPipeDashArray(pipe: Pipe): string {
   return 'none';
 }
 
+function formatMaterialCost(pipe: Pipe): string {
+  const cost = baseConfig.repairMaterialCost[pipe.type][pipe.status];
+  const parts: string[] = [];
+  if (cost.parts) parts.push(`🔧×${cost.parts}`);
+  if (cost.oxygen_filter) parts.push(`🫁×${cost.oxygen_filter}`);
+  if (cost.battery) parts.push(`🔋×${cost.battery}`);
+  return parts.join(' ');
+}
+
 export default function BaseSection() {
-  const { state, selectedCrew, selectedTarget, selectTarget } = useGame();
+  const { state, selectedCrew, selectedTarget, selectTarget, checkRepairMaterials } = useGame();
   const { modules, pipes, doors } = state.base;
 
   const moduleCrewCount = useMemo(() => {
@@ -51,6 +61,20 @@ export default function BaseSection() {
     });
     return count;
   }, [state.crew]);
+
+  const pipeMaterialStatus = useMemo(() => {
+    const status = new Map<string, { sufficient: boolean; cost: string }>();
+    pipes.forEach(pipe => {
+      if (pipe.status !== 'normal') {
+        const check = checkRepairMaterials(pipe.id);
+        status.set(pipe.id, {
+          sufficient: check.sufficient,
+          cost: formatMaterialCost(pipe),
+        });
+      }
+    });
+    return status;
+  }, [pipes, checkRepairMaterials]);
 
   const svgWidth = 520;
   const svgHeight = 580;
@@ -128,7 +152,9 @@ export default function BaseSection() {
           const path = buildPipePath(pipe);
           if (!path) return null;
           const isSelected = selectedTarget === pipe.id;
-          const color = getPipeColor(pipe);
+          const matStatus = pipeMaterialStatus.get(pipe.id);
+          const canRepair = pipe.status === 'normal' || matStatus?.sufficient;
+          const color = getPipeColor(pipe, canRepair);
           const isClickable = pipe.status !== 'normal';
 
           return (
@@ -139,7 +165,7 @@ export default function BaseSection() {
                 stroke={color}
                 strokeWidth={isSelected ? 5 : 3}
                 strokeDasharray={getPipeDashArray(pipe)}
-                opacity={isSelected ? 1 : 0.8}
+                opacity={isSelected ? 1 : canRepair ? 0.8 : 0.5}
                 filter={isSelected ? 'url(#glow)' : undefined}
                 className={isClickable ? 'cursor-pointer' : ''}
                 onClick={() => isClickable && handlePipeClick(pipe)}
@@ -160,21 +186,46 @@ export default function BaseSection() {
                   fill="none"
                   stroke="transparent"
                   strokeWidth={12}
-                  className="cursor-pointer"
-                  onClick={() => handlePipeClick(pipe)}
+                  className={canRepair ? 'cursor-pointer' : 'cursor-not-allowed'}
+                  onClick={() => canRepair && handlePipeClick(pipe)}
                 />
               )}
               {pipe.status !== 'normal' && (
-                <text
-                  x={pipe.path[pipe.path.length - 1].x}
-                  y={pipe.path[pipe.path.length - 1].y - 5}
-                  fill={color}
-                  fontSize="10"
-                  fontWeight="bold"
-                  textAnchor="middle"
-                >
-                  {pipe.status === 'broken' ? '⚠' : '🔧'}
-                </text>
+                <g>
+                  <text
+                    x={pipe.path[pipe.path.length - 1].x}
+                    y={pipe.path[pipe.path.length - 1].y - 5}
+                    fill={color}
+                    fontSize="10"
+                    fontWeight="bold"
+                    textAnchor="middle"
+                  >
+                    {pipe.status === 'broken' ? '⚠' : '🔧'}
+                    {!canRepair && '🚫'}
+                  </text>
+                  {isSelected && matStatus && (
+                    <g>
+                      <rect
+                        x={pipe.path[pipe.path.length - 1].x - 50}
+                        y={pipe.path[pipe.path.length - 1].y - 35}
+                        width={100}
+                        height={22}
+                        fill={canRepair ? 'rgba(6, 182, 212, 0.9)' : 'rgba(239, 68, 68, 0.9)'}
+                        rx={4}
+                      />
+                      <text
+                        x={pipe.path[pipe.path.length - 1].x}
+                        y={pipe.path[pipe.path.length - 1].y - 20}
+                        fill="white"
+                        fontSize="9"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                      >
+                        {canRepair ? matStatus.cost : '材料不足!'}
+                      </text>
+                    </g>
+                  )}
+                </g>
               )}
             </g>
           );
@@ -352,7 +403,7 @@ export default function BaseSection() {
             textAnchor="middle"
             fontWeight="bold"
           >
-            点击损坏的管线或舱门分配任务
+            点击损坏的管线或舱门分配任务（材料不足的管线已禁用）
           </text>
         )}
       </svg>

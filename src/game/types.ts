@@ -1,3 +1,5 @@
+export type MaterialType = 'parts' | 'oxygen_filter' | 'battery';
+
 export type ModuleType = 'command' | 'living' | 'lab' | 'storage' | 'engine' | 'airlock';
 
 export type PipeStatus = 'normal' | 'damaged' | 'broken';
@@ -14,11 +16,35 @@ export type EventType = 'pipe_damage' | 'power_failure' | 'oxygen_leak' | 'fire'
 
 export type GameStatus = 'playing' | 'victory' | 'defeat';
 
-export type ActionType = 'assign_task' | 'seal_door' | 'switch_circuit' | 'end_turn';
+export type ActionType = 'assign_task' | 'seal_door' | 'switch_circuit' | 'end_turn' | 'restock_material';
 
 export interface Position {
   x: number;
   y: number;
+}
+
+export interface Inventory {
+  parts: number;
+  oxygen_filter: number;
+  battery: number;
+}
+
+export interface MaterialRequirement {
+  parts?: number;
+  oxygen_filter?: number;
+  battery?: number;
+}
+
+export interface MaterialConfig {
+  name: string;
+  icon: string;
+  description: string;
+  color: string;
+}
+
+export interface MaterialRestockEvent {
+  material: MaterialType;
+  amount: number;
 }
 
 export interface Module {
@@ -93,6 +119,7 @@ export interface Task {
   progress: number;
   duration: number;
   startTime: number;
+  materialCost?: MaterialRequirement;
 }
 
 export interface GameEvent {
@@ -129,6 +156,7 @@ export interface GameState {
     doors: Door[];
     circuits: Circuit[];
   };
+  inventory: Inventory;
   crew: Crew[];
   events: GameEvent[];
   activeTasks: Task[];
@@ -145,6 +173,9 @@ export interface GameConfig {
   eventFrequency: number;
   safetyDecayRate: number;
   baseRepairSpeed: number;
+  initialInventory: Inventory;
+  repairMaterialCost: Record<PipeType, Record<PipeStatus, MaterialRequirement>>;
+  materials: Record<MaterialType, MaterialConfig>;
   modules: Module[];
   pipes: Pipe[];
   doors: Door[];

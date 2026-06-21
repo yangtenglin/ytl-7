@@ -1,4 +1,44 @@
-import type { GameConfig, Module, Pipe, Door, Circuit, Crew } from './types';
+import type { GameConfig, Module, Pipe, Door, Circuit, Crew, MaterialType, MaterialConfig, Inventory, PipeType, PipeStatus, MaterialRequirement } from './types';
+
+const materials: Record<MaterialType, MaterialConfig> = {
+  parts: {
+    name: '零件',
+    icon: '🔧',
+    description: '通用机械零件，用于管线和设备维修',
+    color: 'text-cyan-400',
+  },
+  oxygen_filter: {
+    name: '氧滤芯',
+    icon: '🫁',
+    description: '氧气过滤芯，维修氧气管线必需',
+    color: 'text-blue-400',
+  },
+  battery: {
+    name: '电池',
+    icon: '🔋',
+    description: '备用电池组，维修电力管线必需',
+    color: 'text-yellow-400',
+  },
+};
+
+const initialInventory: Inventory = {
+  parts: 10,
+  oxygen_filter: 6,
+  battery: 6,
+};
+
+const repairMaterialCost: Record<PipeType, Record<PipeStatus, MaterialRequirement>> = {
+  oxygen: {
+    normal: {},
+    damaged: { parts: 1, oxygen_filter: 1 },
+    broken: { parts: 2, oxygen_filter: 2 },
+  },
+  power: {
+    normal: {},
+    damaged: { parts: 1, battery: 1 },
+    broken: { parts: 2, battery: 2 },
+  },
+};
 
 const modules: Module[] = [
   {
@@ -326,6 +366,9 @@ export const baseConfig: GameConfig = {
   eventFrequency: 0.6,
   safetyDecayRate: 1.0,
   baseRepairSpeed: 1.0,
+  initialInventory,
+  repairMaterialCost,
+  materials,
   modules,
   pipes,
   doors,
