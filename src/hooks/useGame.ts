@@ -17,9 +17,12 @@ export function useGame() {
     assignRepairTask,
     assignSealDoorTask,
     assignTreatTask,
+    assignSupplyTask,
     toggleCircuitSwitch,
     restockMaterial,
     checkRepairMaterials,
+    moveTaskUp,
+    moveTaskDown,
     endTurn,
     setPaused,
     setReplayFrame,
@@ -68,6 +71,21 @@ export function useGame() {
     return checkRepairMaterials(pipeId);
   }, [checkRepairMaterials]);
 
+  const handleAssignSupplyTask = useCallback((crewId: string, material: MaterialType, amount: number) => {
+    const result = assignSupplyTask(crewId, material, amount);
+    if (!result.success && result.message) {
+      showNotification(result.message, 'error');
+    }
+  }, [assignSupplyTask, showNotification]);
+
+  const handleMoveTaskUp = useCallback((taskId: string) => {
+    moveTaskUp(taskId);
+  }, [moveTaskUp]);
+
+  const handleMoveTaskDown = useCallback((taskId: string) => {
+    moveTaskDown(taskId);
+  }, [moveTaskDown]);
+
   const loadSavedReplay = useCallback(() => {
     const data = loadReplayFromStorage();
     if (data) {
@@ -113,7 +131,10 @@ export function useGame() {
     selectTarget: handleTargetSelect,
     toggleCircuitSwitch,
     restockMaterial: handleRestockMaterial,
+    assignSupplyTask: handleAssignSupplyTask,
     checkRepairMaterials: handleCheckRepairMaterials,
+    moveTaskUp: handleMoveTaskUp,
+    moveTaskDown: handleMoveTaskDown,
     endTurn,
     setPaused,
     setReplayFrame,

@@ -202,7 +202,7 @@ export default function CrewPanel() {
                     <div className="mt-2 p-2 bg-slate-900/50 rounded border border-slate-600">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-slate-300">
-                          {task.type === 'repair_pipe' ? '🔧 修复管线' : task.type === 'seal_door' ? '🔒 密封舱门' : '🏥 医疗救治'}
+                          {task.type === 'repair_pipe' ? '🔧 修复管线' : task.type === 'seal_door' ? '🔒 密封舱门' : task.type === 'restock_material' ? '📦 物资补给' : '🏥 医疗救治'}
                         </span>
                         <span className="text-cyan-400 flex items-center gap-1">
                           <Clock className="w-3 h-3" />

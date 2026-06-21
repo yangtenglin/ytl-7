@@ -29,8 +29,8 @@ const materialTextColors: Record<MaterialType, string> = {
 };
 
 export default function StoragePanel() {
-  const { state, restockMaterial } = useGame();
-  const { inventory } = state;
+  const { state, restockMaterial, assignSupplyTask, selectedCrew, showNotification } = useGame();
+  const { inventory, crew } = state;
   const [restockAmounts, setRestockAmounts] = useState<Record<MaterialType, number>>({
     parts: 1,
     oxygen_filter: 1,
@@ -39,6 +39,9 @@ export default function StoragePanel() {
   const [showRestock, setShowRestock] = useState<MaterialType | null>(null);
 
   const materials: MaterialType[] = ['parts', 'oxygen_filter', 'battery'];
+
+  const selectedCrewData = crew.find(c => c.id === selectedCrew);
+  const canAssignSupply = selectedCrewData && selectedCrewData.status === 'idle' && selectedCrewData.health > 0;
 
   const handleAmountChange = (material: MaterialType, delta: number) => {
     setRestockAmounts(prev => ({
@@ -49,7 +52,11 @@ export default function StoragePanel() {
 
   const handleRestock = (material: MaterialType) => {
     const amount = restockAmounts[material];
-    restockMaterial(material, amount);
+    if (selectedCrew && canAssignSupply) {
+      assignSupplyTask(selectedCrew, material, amount);
+    } else {
+      restockMaterial(material, amount);
+    }
     setShowRestock(null);
     setRestockAmounts(prev => ({ ...prev, [material]: 1 }));
   };
@@ -196,9 +203,15 @@ export default function StoragePanel() {
                   </div>
                   <button
                     onClick={() => handleRestock(material)}
-                    className="px-3 py-1.5 rounded bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-500 transition-colors"
+                    className={`px-3 py-1.5 rounded text-white text-xs font-bold transition-colors ${
+                      selectedCrew && canAssignSupply
+                        ? 'bg-green-600 hover:bg-green-500'
+                        : 'bg-cyan-600 hover:bg-cyan-500'
+                    }`}
                   >
-                    确认入库 ×{restockAmounts[material]}
+                    {selectedCrew && canAssignSupply
+                      ? `分配 ${selectedCrewData?.name} 搬运 ×${restockAmounts[material]}`
+                      : `立即入库 ×${restockAmounts[material]}`}
                   </button>
                 </div>
               )}
@@ -212,6 +225,8 @@ export default function StoragePanel() {
           <p>• 氧气/电力管线损坏维修需要消耗零件和对应材料</p>
           <p>• 损坏(damaged)需 1 份材料，断裂(broken)需 2 份</p>
           <p>• 材料不足时维修按钮将被禁用</p>
+          <p className="text-green-400">• 💡 选中空闲队员后点击入库，可创建补给任务加入优先级队列</p>
+          <p className="text-cyan-400">• 未选中队员时点击入库，物资将立即到账</p>
         </div>
       </div>
     </div>

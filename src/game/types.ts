@@ -8,7 +8,7 @@ export type PipeType = 'oxygen' | 'power';
 
 export type CrewStatus = 'idle' | 'moving' | 'working' | 'resting';
 
-export type TaskType = 'repair_pipe' | 'seal_door' | 'switch_circuit' | 'move' | 'treat_crew';
+export type TaskType = 'repair_pipe' | 'seal_door' | 'switch_circuit' | 'move' | 'treat_crew' | 'restock_material';
 
 export type EventSeverity = 'info' | 'warning' | 'danger' | 'success';
 
@@ -120,6 +120,8 @@ export interface Task {
   duration: number;
   startTime: number;
   materialCost?: MaterialRequirement;
+  restockMaterial?: MaterialType;
+  restockAmount?: number;
 }
 
 export interface GameEvent {

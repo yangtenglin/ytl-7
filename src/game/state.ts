@@ -77,9 +77,12 @@ interface GameStore {
   assignRepairTask: (crewId: string, pipeId: string) => { success: boolean; message?: string };
   assignSealDoorTask: (crewId: string, doorId: string) => void;
   assignTreatTask: (doctorId: string, patientId: string) => void;
+  assignSupplyTask: (crewId: string, material: MaterialType, amount: number) => { success: boolean; message?: string };
   toggleCircuitSwitch: (circuitId: string) => void;
   restockMaterial: (material: MaterialType, amount: number) => void;
   checkRepairMaterials: (pipeId: string) => { sufficient: boolean; requirement: MaterialRequirement; shortages: string[] };
+  moveTaskUp: (taskId: string) => void;
+  moveTaskDown: (taskId: string) => void;
   endTurn: () => void;
   setPaused: (paused: boolean) => void;
   setReplayFrame: (frame: number | null) => void;
@@ -133,12 +136,14 @@ function processTaskProgress(
   crew: Crew[],
   pipes: Pipe[],
   doors: Door[],
+  inventory: Inventory,
   turn: number
 ): {
   updatedTasks: Task[];
   updatedCrew: Crew[];
   updatedPipes: Pipe[];
   updatedDoors: Door[];
+  updatedInventory: Inventory;
   completedEvents: GameEvent[];
 } {
   const completedEvents: GameEvent[] = [];
@@ -146,6 +151,7 @@ function processTaskProgress(
   let updatedCrew = [...crew];
   let updatedPipes = [...pipes];
   let updatedDoors = [...doors];
+  let updatedInventory = { ...inventory };
 
   tasks.forEach(task => {
     const newProgress = task.progress + (100 / task.duration);
@@ -214,6 +220,23 @@ function processTaskProgress(
             )
           );
         }
+      } else if (task.type === 'restock_material' && task.restockMaterial && task.restockAmount) {
+        const materialInfo = baseConfig.materials[task.restockMaterial];
+        updatedInventory = {
+          ...updatedInventory,
+          [task.restockMaterial]: updatedInventory[task.restockMaterial] + task.restockAmount,
+        };
+        const crewMember = updatedCrew[crewIndex];
+        completedEvents.push(
+          createEvent(
+            'crew_action',
+            turn,
+            `${crewMember?.name || '队员'} 完成仓储入库：${materialInfo.name} ×${task.restockAmount}`,
+            'success',
+            undefined,
+            { material: task.restockMaterial, amount: task.restockAmount }
+          )
+        );
       }
 
       if (crewIndex !== -1) {
@@ -240,6 +263,7 @@ function processTaskProgress(
     updatedCrew,
     updatedPipes,
     updatedDoors,
+    updatedInventory,
     completedEvents,
   };
 }
@@ -440,6 +464,63 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }));
   },
 
+  assignSupplyTask: (crewId, material, amount) => {
+    const { state } = get();
+    if (state.status !== 'playing') return { success: false, message: '游戏未在进行中' };
+
+    const crew = state.crew.find(c => c.id === crewId);
+    if (!crew) return { success: false, message: '队员不存在' };
+    if (crew.status !== 'idle') return { success: false, message: '队员当前不可用' };
+    if (amount <= 0) return { success: false, message: '入库数量必须大于0' };
+
+    const materialInfo = baseConfig.materials[material];
+    const duration = Math.max(1, Math.ceil(amount / (1 + crew.skills.repair / 100)));
+
+    const task: Task = {
+      id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      type: 'restock_material',
+      targetId: `supply_${material}_${Date.now()}`,
+      assignedCrewId: crewId,
+      progress: 0,
+      duration,
+      startTime: state.turn,
+      restockMaterial: material,
+      restockAmount: amount,
+    };
+
+    const action: Action = {
+      type: 'assign_task',
+      payload: { crewId, material, amount, taskType: 'restock_material' },
+      timestamp: Date.now(),
+    };
+
+    const event = createEvent(
+      'crew_action',
+      state.turn,
+      `${crew.name} 开始搬运入库：${materialInfo.name} ×${amount}`,
+      'info',
+      undefined,
+      { material, amount }
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        crew: prev.state.crew.map(c =>
+          c.id === crewId ? { ...c, currentTask: task, status: 'working' } : c
+        ),
+        activeTasks: [...prev.state.activeTasks, task],
+        events: [...prev.state.events, event],
+        pendingActions: [...prev.state.pendingActions, action],
+      },
+      selectedCrew: null,
+      selectedTarget: null,
+      selectedTargetType: null,
+    }));
+
+    return { success: true };
+  },
+
   toggleCircuitSwitch: (circuitId) => {
     const { state } = get();
     if (state.status !== 'playing') return;
@@ -484,6 +565,42 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const sufficient = hasSufficientMaterials(state.inventory, requirement);
     const shortages = sufficient ? [] : getMaterialShortage(state.inventory, requirement);
     return { sufficient, requirement, shortages };
+  },
+
+  moveTaskUp: (taskId) => {
+    const { state } = get();
+    if (state.status !== 'playing') return;
+
+    const index = state.activeTasks.findIndex(t => t.id === taskId);
+    if (index <= 0) return;
+
+    const newTasks = [...state.activeTasks];
+    [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        activeTasks: newTasks,
+      },
+    }));
+  },
+
+  moveTaskDown: (taskId) => {
+    const { state } = get();
+    if (state.status !== 'playing') return;
+
+    const index = state.activeTasks.findIndex(t => t.id === taskId);
+    if (index === -1 || index >= state.activeTasks.length - 1) return;
+
+    const newTasks = [...state.activeTasks];
+    [newTasks[index], newTasks[index + 1]] = [newTasks[index + 1], newTasks[index]];
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        activeTasks: newTasks,
+      },
+    }));
   },
 
   restockMaterial: (material, amount) => {
@@ -539,6 +656,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state.crew,
       state.base.pipes,
       state.base.doors,
+      state.inventory,
       state.turn
     );
 
@@ -704,6 +822,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         doors: taskResult.updatedDoors,
         circuits: state.base.circuits,
       },
+      inventory: taskResult.updatedInventory,
       crew: updatedCrew,
       events: newEvents,
       activeTasks: taskResult.updatedTasks,
