@@ -24,6 +24,11 @@ export function useGame() {
     setPaused,
     setReplayFrame,
     loadReplay,
+    startMeteorStormPrep,
+    allocateShieldPower,
+    triggerMeteorStorm,
+    meteorStormTick,
+    endMeteorStorm,
   } = useGameStore();
 
   const [notification, setNotification] = useState<{ message: string; type: 'error' | 'info' | 'success' } | null>(null);
@@ -116,5 +121,10 @@ export function useGame() {
     loadSavedReplay,
     jumpToFrame,
     getReplayFrames,
+    startMeteorStormPrep,
+    allocateShieldPower,
+    triggerMeteorStorm,
+    meteorStormTick,
+    endMeteorStorm,
   };
 }

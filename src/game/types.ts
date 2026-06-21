@@ -166,6 +166,56 @@ export interface GameState {
   history: HistoryFrame[];
   pendingActions: Action[];
   difficulty: 'easy' | 'normal' | 'hard';
+  meteorStorm: MeteorStormState;
+}
+
+export interface ShieldNode {
+  id: string;
+  name: string;
+  position: { x: number; y: number };
+  angle: number;
+  coverage: number;
+  maxDurability: number;
+  currentDurability: number;
+  powerAllocation: number;
+  maxPowerAllocation: number;
+  moduleId: string;
+}
+
+export interface Meteor {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: 'small' | 'medium' | 'large';
+  damage: number;
+  color: string;
+}
+
+export interface MeteorStormConfig {
+  totalPower: number;
+  prepTime: number;
+  stormDuration: number;
+  meteorCount: number;
+  damageMultiplier: number;
+}
+
+export interface DamageReport {
+  moduleId: string;
+  damage: number;
+  destroyed: boolean;
+}
+
+export interface MeteorStormState {
+  phase: 'idle' | 'prep' | 'storm' | 'result';
+  countdown: number;
+  meteors: Meteor[];
+  shieldNodes: ShieldNode[];
+  totalPower: number;
+  allocatedPower: number;
+  damageReports: DamageReport[];
+  stormWave: number;
 }
 
 export interface GameConfig {
@@ -181,4 +231,6 @@ export interface GameConfig {
   doors: Door[];
   circuits: Circuit[];
   crew: Crew[];
+  meteorStorm: MeteorStormConfig;
+  shieldNodes: ShieldNode[];
 }

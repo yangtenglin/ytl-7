@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useNavigate } from 'react-router-dom';
-import { Rocket, Play, BookOpen, Settings, AlertTriangle, Wrench, Wind, Zap, Users } from 'lucide-react';
+import { Rocket, Play, BookOpen, Settings, AlertTriangle, Wrench, Wind, Zap, Users, Shield } from 'lucide-react';
 
 const difficulties = [
   { id: 'easy', name: '简单', desc: '900秒，故障频率低', color: 'from-green-600 to-green-800' },
@@ -99,7 +99,7 @@ export default function StartScreen() {
           </div>
         </div>
 
-        <div className="flex gap-4 justify-center">
+        <div className="flex gap-4 justify-center mb-4">
           <button
             onClick={handleStartGame}
             className="group flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-500/30 hover:shadow-cyan-400/40 transition-all transform hover:scale-105"
@@ -120,6 +120,16 @@ export default function StartScreen() {
           >
             <Wrench className="w-5 h-5" />
             查看回放
+          </button>
+        </div>
+
+        <div className="flex justify-center">
+          <button
+            onClick={() => navigate('/meteor-storm')}
+            className="flex items-center gap-3 px-8 py-3 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold rounded-xl shadow-lg shadow-orange-500/30 hover:shadow-orange-400/40 transition-all transform hover:scale-105"
+          >
+            <Shield className="w-5 h-5" />
+            陨石雨防御模式
           </button>
         </div>
 

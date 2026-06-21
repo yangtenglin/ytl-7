@@ -27,6 +27,13 @@ import {
 } from './power';
 import { createEvent, generateRandomEvent } from './events';
 import { createHistoryFrame, analyzeDefeat, saveReplay } from './replay';
+import {
+  createInitialMeteorStormState,
+  allocatePower as allocateShieldPower,
+  startPrepPhase,
+  startMeteorStorm,
+  stormTick,
+} from './meteorStorm';
 
 function hasSufficientMaterials(inventory: Inventory, requirement: MaterialRequirement): boolean {
   if (requirement.parts && inventory.parts < requirement.parts) return false;
@@ -78,6 +85,11 @@ interface GameStore {
   setReplayFrame: (frame: number | null) => void;
   loadReplay: (history: HistoryFrame[]) => void;
   timeTick: () => void;
+  startMeteorStormPrep: () => void;
+  allocateShieldPower: (shieldId: string, power: number) => void;
+  triggerMeteorStorm: () => void;
+  meteorStormTick: () => void;
+  endMeteorStorm: () => void;
 }
 
 function createInitialState(difficulty: 'easy' | 'normal' | 'hard'): GameState {
@@ -112,6 +124,7 @@ function createInitialState(difficulty: 'easy' | 'normal' | 'hard'): GameState {
     history: [],
     pendingActions: [],
     difficulty,
+    meteorStorm: createInitialMeteorStormState(difficulty),
   };
 }
 
@@ -750,6 +763,141 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state: {
         ...prev.state,
         timeRemaining: newTime,
+      },
+    }));
+  },
+
+  startMeteorStormPrep: () => {
+    const { state } = get();
+    if (state.status !== 'playing') return;
+    if (state.meteorStorm.phase !== 'idle') return;
+
+    const newMeteorStorm = startPrepPhase(state.meteorStorm, state.difficulty);
+
+    const event = createEvent(
+      'crew_action',
+      state.turn,
+      '⚠️ 探测到陨石雨来袭！请尽快分配护盾能源进行防御！',
+      'danger'
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        meteorStorm: newMeteorStorm,
+        events: [...prev.state.events, event],
+      },
+    }));
+  },
+
+  allocateShieldPower: (shieldId, power) => {
+    const { state } = get();
+    if (state.status !== 'playing') return;
+    if (state.meteorStorm.phase !== 'prep') return;
+
+    const result = allocateShieldPower(
+      state.meteorStorm.shieldNodes,
+      shieldId,
+      power,
+      state.meteorStorm.totalPower
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        meteorStorm: {
+          ...prev.state.meteorStorm,
+          shieldNodes: result.shieldNodes,
+          allocatedPower: result.allocatedPower,
+        },
+      },
+    }));
+  },
+
+  triggerMeteorStorm: () => {
+    const { state } = get();
+    if (state.status !== 'playing') return;
+    if (state.meteorStorm.phase !== 'prep') return;
+
+    const newMeteorStorm = startMeteorStorm(state.meteorStorm, state.difficulty);
+
+    const event = createEvent(
+      'crew_action',
+      state.turn,
+      '💥 陨石雨来袭！护盾系统启动！',
+      'danger'
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        meteorStorm: newMeteorStorm,
+        events: [...prev.state.events, event],
+      },
+    }));
+  },
+
+  meteorStormTick: () => {
+    const { state, isPaused } = get();
+    if (state.status !== 'playing' || isPaused) return;
+    if (state.meteorStorm.phase !== 'storm') return;
+
+    const result = stormTick(state.meteorStorm, state.base.modules, 1);
+
+    let newEvents = [...state.events];
+    result.newDamageReports.forEach(report => {
+      const module = state.base.modules.find(m => m.id === report.moduleId);
+      if (module) {
+        newEvents.push(
+          createEvent(
+            'pipe_damage',
+            state.turn,
+            `💥 ${module.name} 被陨石击中！安全值 -${report.damage}`,
+            report.destroyed ? 'danger' : 'warning',
+            report.moduleId
+          )
+        );
+      }
+    });
+
+    const newOverallSafety = calculateOverallSafety(result.updatedModules);
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        base: {
+          ...prev.state.base,
+          modules: result.updatedModules,
+        },
+        meteorStorm: result.stormState,
+        events: newEvents,
+        overallSafety: newOverallSafety,
+      },
+    }));
+  },
+
+  endMeteorStorm: () => {
+    const { state } = get();
+    if (state.meteorStorm.phase !== 'storm') return;
+
+    const damageReports = state.meteorStorm.damageReports;
+    const totalDamage = damageReports.reduce((sum, r) => sum + r.damage, 0);
+
+    const event = createEvent(
+      'system_repaired',
+      state.turn,
+      `🌧️ 陨石雨已结束。共造成 ${totalDamage} 点伤害，影响 ${damageReports.length} 个模块。`,
+      totalDamage > 50 ? 'danger' : totalDamage > 20 ? 'warning' : 'success'
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        meteorStorm: {
+          ...prev.state.meteorStorm,
+          phase: 'result',
+        },
+        events: [...prev.state.events, event],
       },
     }));
   },

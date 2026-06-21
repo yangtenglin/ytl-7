@@ -1,4 +1,4 @@
-import type { GameConfig, Module, Pipe, Door, Circuit, Crew, MaterialType, MaterialConfig, Inventory, PipeType, PipeStatus, MaterialRequirement } from './types';
+import type { GameConfig, Module, Pipe, Door, Circuit, Crew, MaterialType, MaterialConfig, Inventory, PipeType, PipeStatus, MaterialRequirement, ShieldNode, MeteorStormConfig } from './types';
 
 const materials: Record<MaterialType, MaterialConfig> = {
   parts: {
@@ -361,6 +361,65 @@ const crew: Crew[] = [
   },
 ];
 
+const shieldNodes: ShieldNode[] = [
+  {
+    id: 'shield_top',
+    name: '顶部护盾',
+    position: { x: 260, y: 10 },
+    angle: -90,
+    coverage: 90,
+    maxDurability: 100,
+    currentDurability: 100,
+    powerAllocation: 0,
+    maxPowerAllocation: 30,
+    moduleId: 'cmd',
+  },
+  {
+    id: 'shield_right',
+    name: '右侧护盾',
+    position: { x: 490, y: 290 },
+    angle: 0,
+    coverage: 90,
+    maxDurability: 100,
+    currentDurability: 100,
+    powerAllocation: 0,
+    maxPowerAllocation: 30,
+    moduleId: 'lab',
+  },
+  {
+    id: 'shield_bottom',
+    name: '底部护盾',
+    position: { x: 260, y: 570 },
+    angle: 90,
+    coverage: 90,
+    maxDurability: 100,
+    currentDurability: 100,
+    powerAllocation: 0,
+    maxPowerAllocation: 30,
+    moduleId: 'living',
+  },
+  {
+    id: 'shield_left',
+    name: '左侧护盾',
+    position: { x: 10, y: 290 },
+    angle: 180,
+    coverage: 90,
+    maxDurability: 100,
+    currentDurability: 100,
+    powerAllocation: 0,
+    maxPowerAllocation: 30,
+    moduleId: 'storage',
+  },
+];
+
+const meteorStorm: MeteorStormConfig = {
+  totalPower: 80,
+  prepTime: 30,
+  stormDuration: 15,
+  meteorCount: 20,
+  damageMultiplier: 1,
+};
+
 export const baseConfig: GameConfig = {
   totalTime: 600,
   eventFrequency: 0.6,
@@ -374,10 +433,18 @@ export const baseConfig: GameConfig = {
   doors,
   circuits,
   crew,
+  meteorStorm,
+  shieldNodes,
 };
 
 export const difficultySettings = {
   easy: { eventFrequency: 0.4, safetyDecayRate: 0.7, totalTime: 900 },
   normal: { eventFrequency: 0.6, safetyDecayRate: 1.0, totalTime: 600 },
   hard: { eventFrequency: 0.8, safetyDecayRate: 1.5, totalTime: 480 },
+};
+
+export const meteorStormDifficultySettings = {
+  easy: { totalPower: 100, prepTime: 45, stormDuration: 10, meteorCount: 15, damageMultiplier: 0.7 },
+  normal: { totalPower: 80, prepTime: 30, stormDuration: 15, meteorCount: 20, damageMultiplier: 1 },
+  hard: { totalPower: 60, prepTime: 20, stormDuration: 20, meteorCount: 30, damageMultiplier: 1.5 },
 };
