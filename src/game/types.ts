@@ -8,7 +8,7 @@ export type PipeType = 'oxygen' | 'power';
 
 export type CrewStatus = 'idle' | 'moving' | 'working' | 'resting';
 
-export type TaskType = 'repair_pipe' | 'seal_door' | 'switch_circuit' | 'move' | 'treat_crew' | 'restock_material';
+export type TaskType = 'repair_pipe' | 'seal_door' | 'switch_circuit' | 'move' | 'treat_crew' | 'restock_material' | 'rest';
 
 export type EventSeverity = 'info' | 'warning' | 'danger' | 'success';
 

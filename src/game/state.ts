@@ -105,6 +105,7 @@ interface GameStore {
   assignSealDoorTask: (crewId: string, doorId: string) => void;
   assignTreatTask: (doctorId: string, patientId: string) => void;
   assignSupplyTask: (crewId: string, material: MaterialType, amount: number) => { success: boolean; message?: string };
+  assignRestTask: (crewId: string) => void;
   toggleCircuitSwitch: (circuitId: string) => void;
   restockMaterial: (material: MaterialType, amount: number) => void;
   checkRepairMaterials: (pipeId: string) => { sufficient: boolean; requirement: MaterialRequirement; shortages: string[] };
@@ -265,22 +266,50 @@ function processTaskProgress(
             { material: task.restockMaterial, amount: task.restockAmount }
           )
         );
+      } else if (task.type === 'rest') {
+        if (crewIndex !== -1) {
+          const crewMember = updatedCrew[crewIndex];
+          const fatigueRecover = 25;
+          const healthRecover = 5;
+          updatedCrew[crewIndex] = {
+            ...crewMember,
+            fatigue: Math.max(0, crewMember.fatigue - fatigueRecover),
+            health: Math.min(crewMember.maxHealth, crewMember.health + healthRecover),
+          };
+          completedEvents.push(
+            createEvent(
+              'crew_action',
+              turn,
+              `${crewMember.name} 完成休息，疲劳 -${fatigueRecover}，生命值 +${healthRecover}`,
+              'success',
+              crewMember.id
+            )
+          );
+        }
       }
 
       if (crewIndex !== -1) {
-        updatedCrew[crewIndex] = {
-          ...updatedCrew[crewIndex],
-          currentTask: null,
-          status: 'idle',
-          fatigue: Math.min(100, updatedCrew[crewIndex].fatigue + 5),
-        };
+        if (task.type === 'rest') {
+          updatedCrew[crewIndex] = {
+            ...updatedCrew[crewIndex],
+            currentTask: null,
+            status: 'idle',
+          };
+        } else {
+          updatedCrew[crewIndex] = {
+            ...updatedCrew[crewIndex],
+            currentTask: null,
+            status: 'idle',
+            fatigue: Math.min(100, updatedCrew[crewIndex].fatigue + 5),
+          };
+        }
       }
     } else {
       updatedTasks.push({ ...task, progress: newProgress });
       if (crewIndex !== -1) {
         updatedCrew[crewIndex] = {
           ...updatedCrew[crewIndex],
-          status: 'working',
+          status: task.type === 'rest' ? 'resting' : 'working',
         };
       }
     }
@@ -350,7 +379,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const skill = pipe.type === 'oxygen' ? crew.skills.engineering : crew.skills.electrical;
-    const duration = calculateRepairDuration(pipe, skill, baseConfig.baseRepairSpeed);
+    const duration = calculateRepairDuration(pipe, skill, baseConfig.baseRepairSpeed, crew.fatigue);
 
     const task: Task = {
       id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -578,6 +607,55 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }));
 
     return { success: true };
+  },
+
+  assignRestTask: (crewId) => {
+    const { state } = get();
+    if (state.status !== 'playing') return;
+
+    const crew = state.crew.find(c => c.id === crewId);
+    if (!crew || crew.status !== 'idle') return;
+
+    const duration = 2;
+
+    const task: Task = {
+      id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      type: 'rest',
+      targetId: `rest_${crewId}`,
+      assignedCrewId: crewId,
+      progress: 0,
+      duration,
+      startTime: state.turn,
+    };
+
+    const action: Action = {
+      type: 'assign_task',
+      payload: { crewId, taskType: 'rest' },
+      timestamp: Date.now(),
+    };
+
+    const event = createEvent(
+      'crew_action',
+      state.turn,
+      `${crew.name} 开始休息`,
+      'info',
+      crewId
+    );
+
+    set((prev) => ({
+      state: {
+        ...prev.state,
+        crew: prev.state.crew.map(c =>
+          c.id === crewId ? { ...c, currentTask: task, status: 'resting' } : c
+        ),
+        activeTasks: [...prev.state.activeTasks, task],
+        events: [...prev.state.events, event],
+        pendingActions: [...prev.state.pendingActions, action],
+      },
+      selectedCrew: null,
+      selectedTarget: null,
+      selectedTargetType: null,
+    }));
   },
 
   toggleCircuitSwitch: (circuitId) => {
@@ -829,6 +907,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       if (member.status === 'working') {
         newFatigue = Math.min(100, newFatigue + 8);
+      } else if (member.status === 'resting') {
+        newFatigue = Math.max(0, newFatigue - 15);
       } else if (member.status === 'idle') {
         newFatigue = Math.max(0, newFatigue - 5);
       }

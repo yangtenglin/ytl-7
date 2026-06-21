@@ -18,6 +18,7 @@ export function useGame() {
     assignSealDoorTask,
     assignTreatTask,
     assignSupplyTask,
+    assignRestTask,
     toggleCircuitSwitch,
     restockMaterial,
     checkRepairMaterials,
@@ -83,6 +84,10 @@ export function useGame() {
     }
   }, [assignSupplyTask, showNotification]);
 
+  const handleAssignRestTask = useCallback((crewId: string) => {
+    assignRestTask(crewId);
+  }, [assignRestTask]);
+
   const handleMoveTaskUp = useCallback((taskId: string) => {
     moveTaskUp(taskId);
   }, [moveTaskUp]);
@@ -137,6 +142,7 @@ export function useGame() {
     toggleCircuitSwitch,
     restockMaterial: handleRestockMaterial,
     assignSupplyTask: handleAssignSupplyTask,
+    assignRestTask: handleAssignRestTask,
     checkRepairMaterials: handleCheckRepairMaterials,
     getMaterialAlertStatus: handleGetMaterialAlertStatus,
     moveTaskUp: handleMoveTaskUp,

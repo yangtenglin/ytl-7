@@ -60,10 +60,12 @@ export function damagePipe(pipe: Pipe, severity: 'minor' | 'major' | 'critical')
 export function calculateRepairDuration(
   pipe: Pipe,
   crewSkill: number,
-  baseSpeed: number
+  baseSpeed: number,
+  fatigue: number = 0
 ): number {
   const damageFactor = pipe.damageLevel / 50;
   const skillBonus = 1 + crewSkill / 100;
+  const fatiguePenalty = 1 + fatigue / 100;
   const baseDuration = 2 + damageFactor;
-  return Math.ceil(baseDuration / (baseSpeed * skillBonus));
+  return Math.ceil((baseDuration * fatiguePenalty) / (baseSpeed * skillBonus));
 }

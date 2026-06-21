@@ -49,7 +49,7 @@ function needsTreatment(member: Crew): boolean {
 }
 
 export default function CrewPanel() {
-  const { state, selectedCrew, selectedTarget, selectCrew, selectTarget, selectedTargetType } = useGame();
+  const { state, selectedCrew, selectedTarget, selectCrew, selectTarget, selectedTargetType, assignRestTask } = useGame();
   const { crew, activeTasks } = state;
 
   const getCrewTask = (crewId: string) => {
@@ -202,7 +202,7 @@ export default function CrewPanel() {
                     <div className="mt-2 p-2 bg-slate-900/50 rounded border border-slate-600">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-slate-300">
-                          {task.type === 'repair_pipe' ? '🔧 修复管线' : task.type === 'seal_door' ? '🔒 密封舱门' : task.type === 'restock_material' ? '📦 物资补给' : '🏥 医疗救治'}
+                          {task.type === 'repair_pipe' ? '🔧 修复管线' : task.type === 'seal_door' ? '🔒 密封舱门' : task.type === 'restock_material' ? '📦 物资补给' : task.type === 'rest' ? '😴 休息恢复' : '🏥 医疗救治'}
                         </span>
                         <span className="text-cyan-400 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
@@ -211,7 +211,7 @@ export default function CrewPanel() {
                       </div>
                       <div className="mt-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-gradient-to-r from-cyan-500 to-green-500 transition-all duration-300"
+                          className={`h-full transition-all duration-300 ${task.type === 'rest' ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-gradient-to-r from-cyan-500 to-green-500'}`}
                           style={{ width: `${task.progress}%` }}
                         ></div>
                       </div>
@@ -226,11 +226,21 @@ export default function CrewPanel() {
 
       {selectedCrew && !selectedTarget && (
         <div className="mt-4 p-3 bg-cyan-900/20 border border-cyan-500/30 rounded-lg">
-          <p className="text-cyan-300 text-sm text-center">
+          <p className="text-cyan-300 text-sm text-center mb-2">
             {isDoctorSelected
               ? '✨ 已选择医生，点击受伤队员进行治疗，或点击剖面图中的损坏管线/舱门分配任务'
               : '✨ 已选择队员，点击剖面图中的损坏管线或舱门分配任务'}
           </p>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              assignRestTask(selectedCrew);
+            }}
+            className="w-full py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            <span>😴</span>
+            <span>安排休息（2回合）</span>
+          </button>
         </div>
       )}
 
