@@ -1,13 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Skull, Home, RotateCcw, Play, AlertTriangle, TrendingDown, Users, Wrench, Clock } from 'lucide-react';
+import { Trophy, Skull, Home, RotateCcw, Play, AlertTriangle, TrendingDown, Users, Wrench, Clock, Package, ChevronDown, ChevronRight } from 'lucide-react';
 import ReplayControls from './game/ReplayControls';
 import BaseSection from './game/BaseSection';
-import { getKeyFrames } from '../game/replay';
+import { getKeyFrames, calculateMistakeScore } from '../game/replay';
+import type { MistakeCategory, MistakeDetail } from '../game/types';
 
 export default function ResultScreen() {
-  const { state, initGame, replayFrame } = useGame();
+  const { state, initGame, replayFrame, jumpToFrame } = useGame();
   const navigate = useNavigate();
 
   const isVictory = state.status === 'victory';
@@ -42,6 +43,46 @@ export default function ResultScreen() {
   const criticalModules = state.base.modules.filter(m => m.safetyLevel < 30).length;
 
   const keyFrames = getKeyFrames(state.history);
+
+  const mistakeScore = useMemo(() => {
+    if (!isDefeat || state.history.length === 0) return null;
+    return calculateMistakeScore(state.history, state);
+  }, [isDefeat, state.history, state]);
+
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  const toggleCategory = (key: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const handleMistakeClick = (detail: MistakeDetail) => {
+    if (detail.frameIndex >= 0 && detail.frameIndex < state.history.length) {
+      jumpToFrame(detail.frameIndex);
+    }
+  };
+
+  const categoryIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+    unrepaired_pipes: Wrench,
+    idle_crew: Users,
+    material_waste: Package,
+  };
+
+  const categoryColorMap: Record<string, string> = {
+    unrepaired_pipes: 'text-red-400',
+    idle_crew: 'text-yellow-400',
+    material_waste: 'text-orange-400',
+  };
+
+  const categoryBorderMap: Record<string, string> = {
+    unrepaired_pipes: 'border-red-500/50',
+    idle_crew: 'border-yellow-500/50',
+    material_waste: 'border-orange-500/50',
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 relative overflow-hidden">
@@ -95,6 +136,91 @@ export default function ResultScreen() {
                     <span>{analysis}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {isDefeat && mistakeScore && mistakeScore.totalDeduction > 0 && (
+            <div className="bg-red-900/20 border border-red-700/50 rounded-xl p-6 mb-6 max-w-4xl mx-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-red-400 font-bold text-lg flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  关键失误评分
+                </h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 text-sm">总扣分</span>
+                  <span className="text-red-400 text-2xl font-bold" style={{ fontFamily: "'Orbitron', sans-serif" }}>
+                    -{mistakeScore.totalDeduction}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {mistakeScore.categories.map((category) => {
+                  const Icon = categoryIconMap[category.key] ?? AlertTriangle;
+                  const color = categoryColorMap[category.key] ?? 'text-red-400';
+                  const borderColor = categoryBorderMap[category.key] ?? 'border-red-500/50';
+                  const isExpanded = expandedCategories.has(category.key);
+
+                  return (
+                    <div key={category.key} className={`bg-slate-900/50 backdrop-blur border ${borderColor} rounded-xl overflow-hidden`}>
+                      <div
+                        className="p-4 cursor-pointer hover:bg-slate-800/50 transition-all"
+                        onClick={() => toggleCategory(category.key)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Icon className={`w-4 h-4 ${color}`} />
+                            <span className="text-slate-300 text-sm font-bold">{category.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`${color} text-lg font-bold`}>-{category.totalDeduction}</span>
+                            {isExpanded ? (
+                              <ChevronDown className="w-4 h-4 text-slate-500" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-slate-500" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {isExpanded && category.details.length > 0 && (
+                        <div className="border-t border-slate-700/50 max-h-48 overflow-y-auto">
+                          {category.details.map((detail, didx) => {
+                            const isActive = replayFrame === detail.frameIndex;
+                            return (
+                              <div
+                                key={didx}
+                                onClick={(e) => { e.stopPropagation(); handleMistakeClick(detail); }}
+                                className={`px-4 py-2 border-b border-slate-800/50 cursor-pointer transition-all flex items-center justify-between group ${
+                                  isActive ? 'bg-cyan-900/30' : 'hover:bg-slate-800/30'
+                                }`}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    <span className={`text-xs font-bold ${isActive ? 'text-cyan-400' : 'text-slate-500'}`}>
+                                      回合 {detail.turn}
+                                    </span>
+                                    <span className={`${color} text-xs font-bold`}>
+                                      -{detail.deduction}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-400 truncate">{detail.description}</p>
+                                </div>
+                                <span className={`text-xs ml-2 opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'text-cyan-400' : 'text-slate-500'}`}>
+                                  {isActive ? '查看中' : '跳转'}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {isExpanded && category.details.length === 0 && (
+                        <div className="px-4 py-3 border-t border-slate-700/50 text-xs text-slate-600 text-center">
+                          此项无扣分记录
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

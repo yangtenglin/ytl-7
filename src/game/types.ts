@@ -220,6 +220,25 @@ export interface MeteorStormState {
   stormWave: number;
 }
 
+export interface MistakeDetail {
+  turn: number;
+  frameIndex: number;
+  description: string;
+  deduction: number;
+}
+
+export interface MistakeCategory {
+  key: 'unrepaired_pipes' | 'idle_crew' | 'material_waste';
+  label: string;
+  totalDeduction: number;
+  details: MistakeDetail[];
+}
+
+export interface MistakeScoreResult {
+  categories: MistakeCategory[];
+  totalDeduction: number;
+}
+
 export interface GameConfig {
   totalTime: number;
   eventFrequency: number;

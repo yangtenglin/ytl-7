@@ -1,4 +1,4 @@
-import type { GameState, HistoryFrame, Action, GameEvent } from './types';
+import type { GameState, HistoryFrame, Action, GameEvent, MistakeCategory, MistakeDetail, MistakeScoreResult, Pipe, Crew, Inventory, PipeStatus, MaterialType } from './types';
 
 export function createHistoryFrame(
   state: GameState,
@@ -119,4 +119,128 @@ export function getKeyFrames(history: HistoryFrame[]): HistoryFrame[] {
   });
 
   return keyFrames;
+}
+
+function getPipeLabel(pipe: Pipe): string {
+  const typeLabel = pipe.type === 'oxygen' ? '氧气' : '电力';
+  return `${typeLabel}管线(${pipe.from}→${pipe.to})`;
+}
+
+function getCrewLabel(crew: Crew): string {
+  return crew.name;
+}
+
+function countMaterials(inv: Inventory): number {
+  return inv.parts + inv.oxygen_filter + inv.battery;
+}
+
+export function calculateMistakeScore(history: HistoryFrame[], finalState: GameState): MistakeScoreResult {
+  const unrepairedDetails: MistakeDetail[] = [];
+  const idleCrewDetails: MistakeDetail[] = [];
+  const materialWasteDetails: MistakeDetail[] = [];
+
+  const repairedPipeIdsThisTurn = (frame: HistoryFrame): Set<string> => {
+    const ids = new Set<string>();
+    frame.actions.forEach(a => {
+      if (a.type === 'assign_task' && a.payload.taskType === 'repair_pipe' && a.payload.pipeId) {
+        ids.add(a.payload.pipeId as string);
+      }
+    });
+    return ids;
+  };
+
+  history.forEach((frame, index) => {
+    const pipes: Pipe[] = frame.stateSnapshot.base?.pipes ?? [];
+    const crew: Crew[] = frame.stateSnapshot.crew ?? [];
+    const inventory: Inventory | undefined = frame.stateSnapshot.inventory;
+
+    const damagedPipes = pipes.filter(p => p.status === 'damaged' || p.status === 'broken');
+    if (damagedPipes.length === 0) return;
+
+    const repairedIds = repairedPipeIdsThisTurn(frame);
+    const unrepaired = damagedPipes.filter(p => !repairedIds.has(p.id));
+
+    if (unrepaired.length > 0) {
+      const brokenCount = unrepaired.filter(p => p.status === 'broken').length;
+      const damagedCount = unrepaired.filter(p => p.status === 'damaged').length;
+      const deduction = brokenCount * 10 + damagedCount * 5;
+      const descParts: string[] = [];
+      if (brokenCount > 0) descParts.push(`${brokenCount}条断裂`);
+      if (damagedCount > 0) descParts.push(`${damagedCount}条损坏`);
+      unrepairedDetails.push({
+        turn: frame.turn,
+        frameIndex: index,
+        description: `${descParts.join('、')}管线未安排维修`,
+        deduction,
+      });
+    }
+
+    const idleCrew = crew.filter(c => c.status === 'idle');
+    if (idleCrew.length > 0 && unrepaired.length > 0) {
+      const deduction = Math.min(idleCrew.length, unrepaired.length) * 3;
+      const names = idleCrew.map(c => getCrewLabel(c)).join('、');
+      idleCrewDetails.push({
+        turn: frame.turn,
+        frameIndex: index,
+        description: `${names} 空闲未分配，同时有${unrepaired.length}条待修管线`,
+        deduction,
+      });
+    }
+
+    if (inventory && unrepaired.length > 0 && idleCrew.length > 0 && repairedIds.size === 0) {
+      const totalMats = countMaterials(inventory);
+      const wasteRatio = totalMats > 0 ? Math.min(1, idleCrew.length / crew.length) : 0;
+      const deduction = Math.round(totalMats * wasteRatio * 0.3);
+      if (deduction > 0) {
+        materialWasteDetails.push({
+          turn: frame.turn,
+          frameIndex: index,
+          description: `持有${totalMats}单位物资未使用，${idleCrew.length}名队员闲置`,
+          deduction,
+        });
+      }
+    }
+  });
+
+  const finalActiveRepairs = finalState.activeTasks.filter(t => t.type === 'repair_pipe');
+  finalActiveRepairs.forEach(task => {
+    const cost = task.materialCost;
+    if (cost) {
+      const wasted = (cost.parts ?? 0) + (cost.oxygen_filter ?? 0) + (cost.battery ?? 0);
+      if (wasted > 0) {
+        materialWasteDetails.push({
+          turn: task.startTime,
+          frameIndex: history.findIndex(f => f.turn === task.startTime),
+          description: `未完成维修浪费${wasted}单位物资`,
+          deduction: wasted * 2,
+        });
+      }
+    }
+  });
+
+  const unrepairedCategory: MistakeCategory = {
+    key: 'unrepaired_pipes',
+    label: '未修管线',
+    totalDeduction: unrepairedDetails.reduce((s, d) => s + d.deduction, 0),
+    details: unrepairedDetails,
+  };
+
+  const idleCategory: MistakeCategory = {
+    key: 'idle_crew',
+    label: '空闲队员',
+    totalDeduction: idleCrewDetails.reduce((s, d) => s + d.deduction, 0),
+    details: idleCrewDetails,
+  };
+
+  const wasteCategory: MistakeCategory = {
+    key: 'material_waste',
+    label: '物资浪费',
+    totalDeduction: materialWasteDetails.reduce((s, d) => s + d.deduction, 0),
+    details: materialWasteDetails,
+  };
+
+  const categories = [unrepairedCategory, idleCategory, wasteCategory];
+  const totalDeduction = categories.reduce((s, c) => s + c.totalDeduction, 0);
+
+  return { categories, totalDeduction };
 }
